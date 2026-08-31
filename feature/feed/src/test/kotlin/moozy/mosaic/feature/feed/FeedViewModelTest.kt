@@ -252,6 +252,30 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `an article that arrives twice is only in the list once`() = runTest {
+        // The cached first page carries the cursor it was fetched with, and the
+        // list has moved on since. A window computed against yesterday's offsets
+        // hands back something already on screen -- and two rows with one id is
+        // not a cosmetic problem: the list is keyed by it.
+        val feed = FeedViewModel(
+            FakeArticles(
+                ArticlesResult.Loaded(listOf(article(1), article(2)), PageCursor(NEXT)),
+                ArticlesResult.Loaded(listOf(article(2), article(3)), next = null),
+            ),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
+        )
+
+        feed.state.test {
+            awaitItem()
+            feed.loadMore()
+            awaitItem()
+
+            val all = (awaitItem() as FeedUiState.Content).articles.map { it.id.value }
+            assertEquals(listOf("1", "2", "3"), all)
+        }
+    }
+
+    @Test
     fun `a page that fails to load does not throw away the articles already read`() = runTest {
         val feed = FeedViewModel(
             FakeArticles(
