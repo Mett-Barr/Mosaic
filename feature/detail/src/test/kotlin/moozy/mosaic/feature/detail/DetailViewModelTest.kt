@@ -68,8 +68,8 @@ class DetailViewModelTest {
             detail.open(ArticleId("39742"))
             awaitItem()
 
-            val content = awaitItem() as DetailUiState.Content
-            assertEquals("Roman Commissioning", content.article.title)
+            val shown = (awaitItem() as DetailUiState.Content).article
+            assertEquals(article(), shown)
         }
     }
 
@@ -87,6 +87,31 @@ class DetailViewModelTest {
             offline.open(ArticleId("1"))
             awaitItem()
             assertTrue((awaitItem() as DetailUiState.Failed).reason is FeedFailure.Offline)
+        }
+    }
+
+    @Test
+    fun `an answer for an article the reader has left cannot replace the one they are on`() = runTest {
+        val slowFirst = CompletableDeferred<ArticleResult>()
+        val detail = DetailViewModel(
+            object : ArticleRepository {
+                override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+                override suspend fun article(id: ArticleId): ArticleResult =
+                    if (id.value == "1") slowFirst.await() else ArticleResult.Loaded(article("2", "Second"))
+            },
+        )
+
+        detail.state.test {
+            detail.open(ArticleId("1"))
+            assertEquals(DetailUiState.Loading, awaitItem())
+
+            detail.open(ArticleId("2"))
+            assertEquals("Second", (awaitItem() as DetailUiState.Content).article.title)
+
+            // The first article finally answers. Nobody is waiting for it any more.
+            slowFirst.complete(ArticleResult.Loaded(article("1", "First")))
+
+            expectNoEvents()
         }
     }
 
@@ -129,13 +154,13 @@ class DetailViewModelTest {
 
     private fun detailOf(result: ArticleResult) = DetailViewModel(FakeArticle(result))
 
-    private fun article() = ArticleItem(
-        id = ArticleId("39742"),
-        title = "Roman Commissioning",
+    private fun article(id: String = "39742", title: String = "Roman Commissioning") = ArticleItem(
+        id = ArticleId(id),
+        title = title,
         summary = "Where is Roman?",
         source = "NASA",
         url = "https://science.nasa.gov/roman/",
-        imageUrl = null,
+        imageUrl = "https://assets.science.nasa.gov/roman.jpg",
         publishedAt = Instant.parse("2026-08-31T12:16:53Z"),
     )
 
