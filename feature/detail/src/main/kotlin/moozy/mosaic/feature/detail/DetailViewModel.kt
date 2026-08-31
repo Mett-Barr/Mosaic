@@ -44,6 +44,9 @@ class DetailViewModel @Inject constructor(
         load(showing ?: return)
     }
 
+    private suspend fun keptCopyOf(id: ArticleId): DetailUiState.Content? =
+        kept.saved.first().firstOrNull { it.id == id }?.let { DetailUiState.Content(it, saved = true) }
+
     /** Keep this article to read later, network or no network. */
     fun keep() {
         val article = (_state.value as? DetailUiState.Content)?.article ?: return
@@ -82,7 +85,11 @@ class DetailViewModel @Inject constructor(
                     article = result.article,
                     saved = kept.saved.first().any { it.id == result.article.id },
                 )
-                is ArticleResult.Failed -> DetailUiState.Failed(result.reason)
+                // A reader who kept this one asked for it to be here when the
+                // network is not. Falling back to the copy they kept is the whole
+                // point of having kept it; failing anyway would make the button a
+                // decoration.
+                is ArticleResult.Failed -> keptCopyOf(id) ?: DetailUiState.Failed(result.reason)
             }
         }
     }

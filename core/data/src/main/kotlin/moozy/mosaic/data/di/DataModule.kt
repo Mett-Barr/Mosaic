@@ -1,16 +1,22 @@
 package moozy.mosaic.data.di
 
+import android.content.Context
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import java.io.File
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 import moozy.mosaic.data.article.NetworkArticleRepository
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
+import moozy.mosaic.data.saved.FileSavedArticles
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.SavedArticles
 
 /**
  * Where the data layer is assembled.
@@ -40,4 +46,13 @@ internal object DataModule {
     @Singleton
     fun articleRepository(api: SpaceflightNewsApi): ArticleRepository =
         NetworkArticleRepository(api)
+
+    /**
+     * The reading list lives in the app's own storage: it is the reader's, it is
+     * not shared, and it should go when the app does.
+     */
+    @Provides
+    @Singleton
+    fun savedArticles(@ApplicationContext context: Context): SavedArticles =
+        FileSavedArticles(File(context.filesDir, "saved-articles.json"), Dispatchers.IO)
 }
