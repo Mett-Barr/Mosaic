@@ -8,6 +8,7 @@ import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.Cadence
 import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.DataCost
+import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.Freshness
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.repository.ArticleRepository
@@ -80,7 +81,30 @@ internal class CachingArticles(
         }
     }
 
-    override suspend fun article(id: ArticleId): ArticleResult = network.article(id)
+    /**
+     * The network first, because a single article is small and the reader has
+     * asked for this one. What the cache adds is the case where the request
+     * cannot happen at all: the page they are looking at came out of a file, and
+     * refusing to open something already on the device is absurd.
+     *
+     * Only a transport failure falls back. A server that says the article is gone
+     * is stating a fact about the world, and a copy in a cache is not a reason to
+     * contradict it.
+     */
+    override suspend fun article(id: ArticleId): ArticleResult =
+        when (val fresh = network.article(id)) {
+            is ArticleResult.Loaded -> fresh
+            is ArticleResult.Failed -> if (fresh.reason.isTransport()) {
+                cachedArticle(id)?.let(ArticleResult::Loaded) ?: fresh
+            } else {
+                fresh
+            }
+        }
+
+    private suspend fun cachedArticle(id: ArticleId) =
+        cache.read()?.articles?.firstOrNull { it.id == id }
+
+    private fun FeedFailure.isTransport() = this is FeedFailure.Offline || this is FeedFailure.Timeout
 
     private fun CachedArticles.asResult() =
         ArticlesResult.Loaded(articles = articles, next = next, dropped = dropped)

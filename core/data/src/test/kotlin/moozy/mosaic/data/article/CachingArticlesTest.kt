@@ -165,6 +165,56 @@ class CachingArticlesTest {
     }
 
     @Test
+    fun `an article on the cached page opens when the network will not`() = runTest {
+        val cache = FakeCache()
+        val caching = caching(
+            CountingArticles(ArticlesResult.Loaded(listOf(article(1), article(2)), next = null)),
+            cache,
+        )
+        caching.articles(after = null)
+
+        val offline = caching(
+            CountingArticles(articleAnswer = ArticleResult.Failed(FeedFailure.Offline())),
+            cache,
+        ).article(ArticleId("2"))
+
+        assertEquals(
+            "it is on the page the reader is looking at; refusing to open it is absurd",
+            "2",
+            (offline as ArticleResult.Loaded).article.id.value,
+        )
+    }
+
+    @Test
+    fun `an article nobody has a copy of still fails when the network does`() = runTest {
+        val offline = caching(
+            CountingArticles(articleAnswer = ArticleResult.Failed(FeedFailure.Offline())),
+        ).article(ArticleId("9"))
+
+        assertTrue("expected a failure, got $offline", offline is ArticleResult.Failed)
+    }
+
+    @Test
+    fun `an article the server says is gone stays gone, cache or no cache`() = runTest {
+        val cache = FakeCache()
+        val caching = caching(
+            CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
+            cache,
+        )
+        caching.articles(after = null)
+
+        val missing = caching(
+            CountingArticles(articleAnswer = ArticleResult.Failed(FeedFailure.Server(404))),
+            cache,
+        ).article(ArticleId("1"))
+
+        assertTrue(
+            "a copy in a cache is not a reason to contradict the server, got $missing",
+            missing is ArticleResult.Failed,
+        )
+    }
+
+    @Test
     fun `a fetched page is written down for the next run`() = runTest {
         val cache = FakeCache()
         caching(CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)), cache)
@@ -184,7 +234,10 @@ class CachingArticlesTest {
         publishedAt = Instant.parse("2026-09-01T10:00:00Z"),
     )
 
-    private class CountingArticles(vararg answers: ArticlesResult) : ArticleRepository {
+    private class CountingArticles(
+        vararg answers: ArticlesResult,
+        private val articleAnswer: ArticleResult? = null,
+    ) : ArticleRepository {
         private val queue = ArrayDeque(answers.toList())
         var calls = 0
 
@@ -194,7 +247,7 @@ class CachingArticlesTest {
         }
 
         override suspend fun article(id: ArticleId): ArticleResult =
-            error("the caching layer should not be asking for single articles")
+            articleAnswer ?: error("nobody prepared an answer about one article")
     }
 
     private class FakeCache : ArticleCache {
