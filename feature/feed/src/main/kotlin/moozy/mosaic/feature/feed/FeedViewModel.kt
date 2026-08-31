@@ -55,7 +55,7 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = beganLoading(before, from)
             _state.value = when (val result = articles.articles(after = from)) {
-                is ArticlesResult.Loaded -> loaded(result, keeping = kept(before, from))
+                is ArticlesResult.Loaded -> loaded(result, before, from)
                 is ArticlesResult.Failed -> failed(result.reason, before, from)
             }
             loading = false
@@ -73,15 +73,37 @@ class FeedViewModel @Inject constructor(
     private fun kept(before: FeedUiState, from: PageCursor?): List<ArticleItem> =
         if (from != null && before is FeedUiState.Content) before.articles else emptyList()
 
-    private fun loaded(result: ArticlesResult.Loaded, keeping: List<ArticleItem>): FeedUiState {
+    /**
+     * A page that arrived with nothing usable in it is not an empty feed. Both
+     * look like a list of no articles from here, and only one of them means the
+     * reader has reached the end.
+     */
+    private fun loaded(
+        result: ArticlesResult.Loaded,
+        before: FeedUiState,
+        from: PageCursor?,
+    ): FeedUiState {
         next = result.next
+        val keeping = kept(before, from)
         val all = (keeping + result.articles).toImmutableList()
-        return if (all.isEmpty()) {
-            FeedUiState.Empty
-        } else {
-            FeedUiState.Content(articles = all, canLoadMore = result.next != null)
+        val nothingUsable = result.articles.isEmpty() && result.dropped > 0
+        return when {
+            nothingUsable && keeping.isNotEmpty() -> FeedUiState.Content(
+                articles = all,
+                canLoadMore = result.next != null,
+                moreFailed = unreadable(result.dropped),
+            )
+
+            nothingUsable -> FeedUiState.Error(unreadable(result.dropped))
+
+            all.isEmpty() -> FeedUiState.Empty
+
+            else -> FeedUiState.Content(articles = all, canLoadMore = result.next != null)
         }
     }
+
+    private fun unreadable(dropped: Int) =
+        FeedFailure.Unreadable("$dropped rows arrived in a shape this app could not use")
 
     /**
      * A page that failed while there is already something to read is a note on the
