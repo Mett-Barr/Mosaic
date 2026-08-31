@@ -8,13 +8,20 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import android.net.ConnectivityManager
+import androidx.core.content.getSystemService
 import java.io.File
+import java.time.Instant
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import moozy.mosaic.data.article.NetworkArticleRepository
+import moozy.mosaic.data.article.CachingArticles
+import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.FileSavedArticles
+import moozy.mosaic.domain.model.Clock
+import moozy.mosaic.domain.model.DataCost
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
 
@@ -42,10 +49,22 @@ internal object DataModule {
     @Singleton
     fun spaceflightNewsApi(client: HttpClient): SpaceflightNewsApi = SpaceflightNewsApi(client)
 
+    /**
+     * The repository the app sees is the network one wrapped in the freshness
+     * policy. Nothing above here knows a cache exists; it asks for articles and
+     * sometimes the answer costs nothing.
+     */
     @Provides
     @Singleton
-    fun articleRepository(api: SpaceflightNewsApi): ArticleRepository =
-        NetworkArticleRepository(api)
+    fun articleRepository(
+        api: SpaceflightNewsApi,
+        @ApplicationContext context: Context,
+    ): ArticleRepository = CachingArticles(
+        network = NetworkArticleRepository(api),
+        cache = FileArticleCache(File(context.cacheDir, "articles.json"), Dispatchers.IO),
+        clock = Clock { Instant.now() },
+        dataCost = DataCost { context.isOnMeteredConnection() },
+    )
 
     /**
      * The reading list lives in the app's own storage: it is the reader's, it is
@@ -56,3 +75,12 @@ internal object DataModule {
     fun savedArticles(@ApplicationContext context: Context): SavedArticles =
         FileSavedArticles(File(context.filesDir, "saved-articles.json"), Dispatchers.IO)
 }
+
+/**
+ * Whether this connection is one the reader is paying for.
+ *
+ * Unknown counts as metered. Guessing wrong in that direction costs a slightly
+ * staler feed; guessing wrong the other way spends somebody's data.
+ */
+private fun Context.isOnMeteredConnection(): Boolean =
+    getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true
