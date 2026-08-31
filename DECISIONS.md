@@ -1,27 +1,30 @@
-# Decisions
+# 決策紀錄
 
-A log of the choices a reviewer would reasonably question. Each entry records what was
-picked, what was considered instead, and what the trade-off costs.
+審查者會合理質疑的每一個選擇記在這裡。每一則寫三件事：選了什麼、當時還考慮過什麼、
+這個取捨的代價是什麼。
 
-Entries are written **at the moment of the decision**, in the same commit that makes it.
-Reconstructing "what did I consider?" afterwards produces a tidier story than the true
-one — the roads not taken are exactly what memory drops first.
+每一則都在**做決定的當下**寫，寫在做出這個決定的同一個 commit 裡。事後回頭補寫，
+會生出一個比真實情況整齊的版本——沒走的那條路正是記憶最先丟掉的東西。
 
 ---
 
-## 1. Seven modules rather than one
+## 1. 七個模組，而不是一個
 
-**Picked** — `:app`, `:core:domain`, `:core:data`, `:core:ui`, and one module per screen
-(`:feature:feed`, `:feature:detail`, `:feature:saved`).
+**選了** —— `:app`、`:core:domain`、`:core:data`、`:core:ui`，以及一個畫面一個模組
+（`:feature:feed`、`:feature:detail`、`:feature:saved`）。
 
-**Considered instead** — a single `:app` module with packages. For an app this size that
-is a defensible choice and builds faster.
+**當時還考慮** —— 單一 `:app` 模組，內部用 package 分層。以這個規模的 app 來說那是
+站得住腳的選擇，而且建置快得多。
 
-**Trade-off** — module boundaries cost build configuration and some ceremony, and the
-build is slower than a single module would be. What they buy is that the dependency
-direction is enforced by the compiler rather than by discipline: `:core:domain` is a
-plain Kotlin module with no Android dependency, so a DTO or a Compose type *cannot*
-leak into it — the build fails. Packages only make that a convention.
+**取捨** —— 模組邊界要付出建置設定的成本與一些樣板，建置也比單模組慢。換來的是
+**domain 的純度由編譯器保證**：`:core:domain` 是純 Kotlin 模組、沒有 Android 相依，
+所以 DTO 或 Compose 型別**不可能**流進去——會直接建置失敗。用 package 分層的話，
+這件事只是一個慣例。
 
-**Why it was decided first** — module boundaries are the one decision that gets more
-expensive the longer it is deferred, because every file written before it has to move.
+**這個保證只到這裡為止。** 編譯器擋住的是「Android 型別進 domain」，它擋不住
+`:feature:*` 去相依 `:core:data`，也擋不住 feature 之間互相相依——那些只要有人改一行
+Gradle 設定就成立了。所以相依規則另外由 Konsist 架構測試把關（見第 2 則）；
+只講「相依方向由編譯器保證」是把 Gradle 設定當成了不可變的事實。
+
+**為什麼它是第一個被決定的** —— 模組邊界是唯一一個「拖越久越貴」的決定，因為在它
+之前寫的每一個檔案事後都得搬家。

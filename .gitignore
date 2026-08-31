@@ -32,3 +32,7 @@ keystore.properties
 
 # Agent 工具設定（本機開發用，非專案產物）
 .claude/
+
+# 第二個模型的審查輸入／輸出（見 AGENTS.md），結論落在 AI_USAGE.md
+.codex-task.md
+.codex-review.md

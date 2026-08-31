@@ -1,12 +1,11 @@
 # 工作約定
 
-這份文件描述本專案**實際在用**的開發流程與 AI 協作規則。它不是理想，是把做法寫下來——
-`git log` 上的每個 commit 都是照這裡跑出來的。
+單人開發，全程與 AI coding agent 協作。這份文件描述**實際在用**的流程——它不是理想，
+從它被寫下的那個 commit 起，後面每個 commit 都是照這裡跑出來的。
 
-單人開發，全程與 AI coding agent 協作。流程對應三個既有實踐：
-[spec-driven development](https://github.github.com/spec-kit/)（人定義驗收條件）、
-[red/green TDD](https://simonwillison.net/guides/agentic-engineering-patterns/red-green-tdd/)（測試先行且必須先看它失敗）、
-human-in-the-loop（人審測試與 diff）。
+流程對應三個既有實踐：[spec-driven development](https://github.github.com/spec-kit/)
+（人定義驗收條件）、[red/green TDD](https://simonwillison.net/guides/agentic-engineering-patterns/red-green-tdd/)
+（測試先行且必須先看它失敗）、human-in-the-loop（人審測試與 diff）。
 
 ---
 
@@ -21,7 +20,19 @@ human-in-the-loop（人審測試與 diff）。
 ./gradlew createModuleGraph          # 重新產生 README 的模組相依圖
 ```
 
-`allWarningsAsErrors = true`，編譯警告會直接讓建置失敗。
+指令以 POSIX shell 為準（Windows 上用 Git Bash）；PowerShell 請改用 `.\gradlew.bat`。
+
+`allWarningsAsErrors = true` 只把 **Kotlin 編譯器**的警告升為錯誤，不涵蓋 Android lint、
+Java 警告或 Gradle deprecation。lint 目前只有 error 會擋建置，warning 不擋——
+這是刻意的，版本落後之類的提示不該中斷開發，但也因此**不能說「本專案零警告」**。
+
+交給第二個模型審查（見下節「兩個模型，不同角色」）：
+
+```bash
+codex exec --model gpt-5.6-luna -c model_reasoning_effort="max" \
+  --dangerously-bypass-approvals-and-sandbox \
+  -o .codex-review.md "$(cat .codex-task.md)" < /dev/null
+```
 
 ---
 
@@ -47,6 +58,34 @@ human-in-the-loop（人審測試與 diff）。
 1. 它**先失敗過**嗎？（沒看過紅燈的測試不算測試）
 2. 測的是**行為**還是實作細節？
 3. assertion 有沒有可能被 hardcode 的回傳值蒙混過去？
+4. 把實作整段移除，它**還會失敗**嗎？（反向驗證，防的是測到了別的東西）
+
+### 紅燈要留下證據
+
+「先看過紅燈」如果只存在於記憶裡，等於沒有發生過。所以測試與實作**分成兩個 commit**：
+
+```
+test(feed): assert the list surfaces a load failure     ← 這個 commit 是紅的
+feat(feed): handle loading, empty and error states      ← 這個讓它變綠
+```
+
+`test` 那個 commit 的 body 貼上實際的失敗輸出。兩個都在 topic branch 上，
+`--no-ff` 併回 `main`。因此 **`main` 的第一父系（`git log --first-parent`）每個
+commit 都是綠的**，而紅燈那一步留在 history 裡——它就是證據本身。
+
+### 兩個模型，不同角色
+
+| Agent | 角色 |
+|---|---|
+| **Claude Code**（Opus 5） | 產出：寫測試、寫實作、跑 gate、commit |
+| **Codex**（`gpt-5.6-luna`，reasoning effort `max`） | 獨立審查：在人審之前讀 diff，任務是**提出反對意見** |
+
+用第二個模型而不是同一個模型跑第二輪，是因為**同一個模型的第二意見會複製它自己的
+盲區**。不同實驗室訓練出來的模型不共用失敗模式——這是它唯一的價值來源，換成
+「再問 Claude 一次」就完全失去意義。
+
+Codex 的意見是**建議而非閘門**：它擋不住 commit，人可以否決它，否決的理由記進
+`AI_USAGE.md`。它也不進 commit trailer——**審查不構成作者身分**，trailer 只記誰產出。
 
 ---
 
@@ -55,19 +94,24 @@ human-in-the-loop（人審測試與 diff）。
 ### commit loop——產出一個 commit
 
 ```
-1  [人]    定義行為 + 驗收條件
-2  [AI]    寫測試，確認它失敗
-3  [人]    審測試（見上）
-4  [AI]    實作到測試綠
-5  [gate]  ./gradlew build detekt lint 全綠
-6  [人]    審 diff → 接受 / 拒絕 / 重寫，理由當下記進 AI_USAGE.md
-7  [AI]    commit
-8  [人]    有架構取捨 → 同一個 commit 內寫 DECISIONS.md
+1  [人]     定義行為 + 驗收條件
+2  [AI]     寫測試，跑一次，留下失敗輸出
+3  [人]     審測試（見上四點）
+4  [AI]     commit 測試（紅），失敗輸出貼進 body
+5  [AI]     實作到測試綠
+6  [gate]   ./gradlew build detekt lint 全綠
+7  [Codex]  獨立審查 diff，只找反對意見
+8  [人]     審 diff＋Codex 的意見 → 接受 / 拒絕 / 重寫，理由記進 AI_USAGE.md
+9  [AI]     commit 實作（綠）
+10 [人]     有架構取捨 → 同一個 commit 內寫 DECISIONS.md
 ```
 
 第 1 與第 3 步是這個迴圈的支點。其餘步驟全部由 AI 完成也無妨，只要這兩步在人手上。
 
-第 8 步必須當下寫：「當時考慮過哪些替代方案」事後回想會失真，沒選的那條路兩天後
+第 7 步刻意排在第 8 步之前：讓人先看到一份「已經有人反對過」的 diff，比讓人從零
+開始找問題更容易發現自己漏掉的東西。
+
+第 10 步必須當下寫：「當時考慮過哪些替代方案」事後回想會失真，沒選的那條路兩天後
 想不起來為什麼不選。
 
 ### session loop——一個工作階段
@@ -81,8 +125,8 @@ D  回顧：更新 backlog、檢查文件有沒有落後於程式碼
 
 `spike/` 分支的產出預期是**知識**而非程式碼，驗證完直接丟棄，不併回。
 
-> 這裡的 commit / session 不是 DevEx 領域慣用的 inner / outer loop
-> （那組詞指的是「本機 code-build-test」與「push 之後的 CI/CD」），刻意改名以免混淆。
+> 這裡的 commit／session 刻意不叫 inner／outer loop——那組詞在 DevEx 領域已經指
+> 「本機 code-build-test」與「push 之後的 CI/CD」，借來用會誤導。
 
 ---
 
@@ -95,9 +139,9 @@ D  回顧：更新 backlog、檢查文件有沒有落後於程式碼
 microsoft/vscode-copilot-release#13062）。Anthropic 官方把這個 failure pattern 命名為
 **trust-then-verify gap**，對策是 *"Always provide verification. If you can't verify it, don't ship it."*
 
-**這道 gate 目前靠人執行，不是 hook 強制的。** 這份文件是 advisory 而非 enforcement——
-CI 在 push 與 PR 跑同一道 gate，那才是唯一被機器保證的一層。單人專案不值得為此加
-pre-commit hook，但這個限制要講清楚，不要讓讀者以為它是自動的。
+**這道 gate 靠人執行，不是 hook 強制的**——這份文件是 advisory 而非 enforcement。
+CI 在 push 與 PR 跑同一道 gate，那才是唯一被機器保證的一層。這個限制要講清楚，
+不要讓讀者以為它是自動的。
 
 ---
 
@@ -139,6 +183,9 @@ Assisted-by: LLM Claude Code
 | `DECISIONS.md` | 當下·取捨 | 輕量版 [ADR](https://adr.github.io/)：選了什麼·考慮過什麼·取捨是什麼 |
 | `AI_USAGE.md` | 回顧·紀錄 | 實際發生了什麼：接受／拒絕／重寫，以及被 gate 抓到的錯 |
 
+**語言**：文件用中文，**識別字、程式碼註解、commit 訊息一律英文**。
+分界線是「這段字會不會出現在程式碼裡」——會的話跟著程式語言走，不會的話跟著讀者走。
+
 ---
 
 ## 這份文件本身
@@ -146,9 +193,8 @@ Assisted-by: LLM Claude Code
 規則與實際做法不符時，**改文件或改做法，不要讓兩者並存**。
 一份寫了卻沒在跑的規則比沒有規則更糟——它讓讀者無法判斷 history 裡哪些是真的。
 
-**篇幅上限 200 行。** 依據是
-[Claude Code 官方建議](https://code.claude.com/docs/en/best-practices)
-（*"target under 200 lines"*）與 GitHub Copilot 的 *"no longer than 2 pages"*；
-更關鍵的是 [arXiv:2602.11988](https://arxiv.org/abs/2602.11988) 實測發現 context file
-**平均不提升任務成功率，卻讓推理成本增加 20% 以上**——agent 是忠實遵守而非忽略這些
-指令，多餘的內容讓它擴大探索。新增一條規則前先問：**拿掉它會讓 agent 犯錯嗎？** 不會就別加。
+**篇幅上限 200 行**（[Claude Code 官方建議](https://code.claude.com/docs/en/best-practices)
+的 *"target under 200 lines"*）。更關鍵的依據是
+[arXiv:2602.11988](https://arxiv.org/abs/2602.11988)：context file **平均不提升任務
+成功率，卻讓推理成本增加 20% 以上**——agent 是忠實遵守而非忽略這些指令，多餘的內容
+讓它擴大探索。新增一條規則前先問：**拿掉它會讓 agent 犯錯嗎？** 不會就別加。
