@@ -65,4 +65,20 @@ object Cadence {
         staleAfter = Duration.ofMinutes(15),
         staleAfterOnMeteredData = Duration.ofHours(1),
     )
+
+    /**
+     * Weather changes by the minute, and the source says so: it reports in
+     * fifteen-minute intervals. Ten minutes keeps the card honest without asking
+     * more often than there is anything new to hear. On mobile data half an hour
+     * is still a temperature somebody can dress by, and it is three requests
+     * saved every hour the app is open.
+     *
+     * That this is a different pair of numbers from the articles is the point.
+     * The two sources change at different speeds, so one window for both would
+     * either waste data on the slow one or show the fast one stale.
+     */
+    val WEATHER = Freshness(
+        staleAfter = Duration.ofMinutes(10),
+        staleAfterOnMeteredData = Duration.ofMinutes(30),
+    )
 }
