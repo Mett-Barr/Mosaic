@@ -80,6 +80,41 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `a page nobody could read is not an empty feed either`() = runTest {
+        val feed = feedOf(ArticlesResult.Loaded(emptyList(), next = null, dropped = 3))
+
+        feed.state.test {
+            val state = awaitItem()
+            assertTrue("expected an error, got $state", state is FeedUiState.Error)
+            assertTrue(
+                "expected it to say the page was unreadable, got $state",
+                (state as FeedUiState.Error).reason is FeedFailure.Unreadable,
+            )
+        }
+    }
+
+    @Test
+    fun `a next page nobody could read keeps what is already on screen`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(
+                ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
+                ArticlesResult.Loaded(emptyList(), next = null, dropped = 2),
+            ),
+        )
+
+        feed.state.test {
+            awaitItem()
+
+            feed.loadMore()
+            awaitItem()
+
+            val state = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("1"), state.articles.map { it.id.value })
+            assertTrue("expected to be told, got $state", state.moreFailed is FeedFailure.Unreadable)
+        }
+    }
+
+    @Test
     fun `no network is its own answer, not an empty feed`() = runTest {
         val feed = feedOf(ArticlesResult.Failed(FeedFailure.Offline()))
 
