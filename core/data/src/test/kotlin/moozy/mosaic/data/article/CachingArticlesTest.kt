@@ -79,6 +79,37 @@ class CachingArticlesTest {
     }
 
     @Test
+    fun `a reader who asks for it again gets a request, cache or no cache`() = runTest {
+        val network = CountingArticles(
+            ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val caching = caching(network)
+
+        caching.articles(after = null)
+        now = noon.plusSeconds(60)
+        val asked = caching.articles(after = null, force = true)
+
+        assertEquals("a policy is for the app to follow, not to overrule the reader", 2, network.calls)
+        assertEquals(listOf("2"), (asked as ArticlesResult.Loaded).articles.map { it.id.value })
+    }
+
+    @Test
+    fun `asking again on mobile data is still the reader's decision`() = runTest {
+        val network = CountingArticles(
+            ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val caching = caching(network)
+
+        caching.articles(after = null)
+        metered = true
+        caching.articles(after = null, force = true)
+
+        assertEquals("they were told it costs, and asked anyway", 2, network.calls)
+    }
+
+    @Test
     fun `a page that will not load is answered by the one already here`() = runTest {
         val network = CountingArticles(
             ArticlesResult.Loaded(listOf(article(1)), next = null),

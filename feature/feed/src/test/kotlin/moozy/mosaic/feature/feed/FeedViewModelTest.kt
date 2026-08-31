@@ -277,6 +277,43 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `retrying insists, rather than being told the answer is still fresh`() = runTest {
+        val repository = FakeArticles(
+            ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val feed = FeedViewModel(repository, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
+
+        feed.state.test {
+            awaitItem()
+
+            feed.retry()
+
+            assertEquals(FeedUiState.Loading, awaitItem())
+            assertEquals(listOf("2"), (awaitItem() as FeedUiState.Content).articles.map { it.id.value })
+        }
+        assertEquals("a reader asking again should not be answered from a file", listOf(true), repository.forced)
+    }
+
+    @Test
+    fun `asking for the next page never insists`() = runTest {
+        val repository = FakeArticles(
+            ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val feed = FeedViewModel(repository, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
+
+        feed.state.test {
+            awaitItem()
+            feed.loadMore()
+            awaitItem()
+            awaitItem()
+        }
+
+        assertEquals("only the first page is ever cached, so only it can be insisted on", emptyList<Boolean>(), repository.forced)
+    }
+
+    @Test
     fun `retrying after a failure asks again from the beginning`() = runTest {
         val repository = FakeArticles(
             ArticlesResult.Failed(FeedFailure.Offline()),
@@ -330,7 +367,11 @@ class FeedViewModelTest {
 
         override suspend fun article(id: ArticleId) = notAsked()
 
-        override suspend fun articles(after: PageCursor?): ArticlesResult {
+        /** Which calls insisted on a request rather than accepting a cached page. */
+        val forced = mutableListOf<Boolean>()
+
+        override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
+            if (force) forced += true
             asked += after
             // A real one goes to the network and therefore suspends. Without this,
             // the feed never yields between setting "loading" and setting the
