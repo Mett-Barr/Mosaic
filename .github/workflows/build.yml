@@ -31,6 +31,14 @@ jobs:
       - name: Compile instrumented tests
         run: ./gradlew compileDebugAndroidTestKotlin
 
+      # AGENTS.md requires documentation not to lag behind the code. The module
+      # graph is the part of that a machine can actually check, so it is checked
+      # rather than left as an instruction nobody can verify.
+      - name: Verify the module graph in the README is current
+        run: |
+          ./gradlew createModuleGraph
+          git diff --exit-code -- README.md
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
