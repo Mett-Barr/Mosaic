@@ -1,6 +1,7 @@
 package moozy.mosaic.data.weather
 
 import java.time.Instant
+import kotlinx.serialization.SerializationException
 import moozy.mosaic.domain.model.Sky
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -61,9 +62,41 @@ class OpenMeteoMapperTest {
 
     @Test
     fun `a forecast with no reading in it is not a forecast`() {
-        assertThrows(Exception::class.java) {
+        assertThrows(SerializationException::class.java) {
             map("""{"utc_offset_seconds": 28800, "timezone": "Asia/Taipei"}""")
         }
+    }
+
+    @Test
+    fun `a different reading is a different reading`() {
+        // The same fixture asserted twice proves a mapper that returns constants.
+        // These numbers share no digits with the captured response.
+        val weather = map(
+            """
+            {"utc_offset_seconds": 0, "timezone": "UTC",
+             "current": {"time": "2026-12-24T18:45", "temperature_2m": -7.4, "weather_code": 73},
+             "daily": {"temperature_2m_max": [-2.1], "temperature_2m_min": [-11.8]}}
+            """.trimIndent(),
+        ).let { it }
+
+        assertEquals(-7, weather.temperature)
+        assertEquals(-2, weather.high)
+        assertEquals(-12, weather.low)
+        assertEquals(Sky.SNOW, weather.sky)
+        assertEquals(Instant.parse("2026-12-24T18:45:00Z"), weather.measuredAt)
+    }
+
+    @Test
+    fun `a reading from the other side of the world is the instant it happened`() {
+        val weather = map(
+            """
+            {"utc_offset_seconds": -28800, "timezone": "America/Los_Angeles",
+             "current": {"time": "2026-09-01T02:30", "temperature_2m": 18.0, "weather_code": 0},
+             "daily": {"temperature_2m_max": [24.0], "temperature_2m_min": [14.0]}}
+            """.trimIndent(),
+        )
+
+        assertEquals(Instant.parse("2026-09-01T10:30:00Z"), weather.measuredAt)
     }
 
     private fun skyFor(code: Int) = map(
