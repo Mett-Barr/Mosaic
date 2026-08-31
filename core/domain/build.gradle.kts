@@ -18,6 +18,11 @@ java {
 }
 
 kotlin {
+    // Pin the compiling JDK rather than only the target bytecode level: the two
+    // are different settings, and an unpinned build picks up whatever JDK the IDE
+    // happens to run Gradle with.
+    jvmToolchain(17)
+
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
         allWarningsAsErrors = true
