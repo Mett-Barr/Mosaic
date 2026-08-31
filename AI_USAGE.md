@@ -143,3 +143,18 @@ Windows 工作樹是 CRLF 無害。它看的是工作樹而不是 index。
 
 第 8 項是這一輪最有價值的：**我問了它「現在該不該停下來」，它說該**。
 一個沒有畫面的 take-home 不管資料層多乾淨，評審看到的都是一個空 app。
+
+### 垂直切片（DI 接線＋畫面）——第二個模型的獨立審查
+
+| # | 它說的 | 處置 |
+|---|---|---|
+| 1 | 無限捲動在下一頁失敗後**會自動再試**：`enabled` 沒有排除 `moreFailed`，effect 重啟時讀者還在底部 | **採納。**這是真的 bug，而且正好違反作業的「不浪費行動網路」。條件補上 `moreFailed == null` |
+| 2 | ViewModel 忽略了資料層帶上來的 `dropped`：整頁壞資料會顯示成 Empty，最後一頁還會說「That is everything」 | **採納。**獨立一組紅→綠 commit。紅燈是 `expected an error, got Empty` |
+| 3 | 這個 UI commit 沒有自動化測試；最小補法是 `androidTest` 的 `createComposeRule` | **接受但延後。**沒有裝置可跑，寫一個從未執行過的測試不算證據。列入 README 的延後表 |
+| 4 | README 說「沒有 DI 接線、app 是空的」已經不成立 | **採納。**獨立 `docs:` commit |
+| 5 | `DataModule.kt` 與 `FeedScreen.kt` 還是 untracked，只處理 tracked diff 會把接線漏掉 | **採納這個提醒。**commit 時逐一指定路徑 |
+| 6 | `:core:ui` 沒有任何 source，但 app 與 feed 都宣告相依它，README 卻說它是設計系統 | **同意是問題，本輪延後。**兩條路（放進真的 theme／拿掉相依）都記進 `.open-questions.md` |
+| 7 | Hilt／權限／網路／ProGuard 都沒有斷線；它實測打了 API 回 200 | **接受。**它自己去打了 API 驗證，這比讀程式碼有力 |
+
+第 1 項是這一輪最重要的：**我寫的自動載入會在失敗後不斷重試**。
+單元測試看不到它——那是 Compose effect 的行為——而它正好打中作業唯一明講「不要浪費」的東西。

@@ -1,0 +1,46 @@
+package moozy.mosaic.feature.feed
+
+import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import moozy.mosaic.domain.model.ArticleItem
+import moozy.mosaic.domain.model.FeedFailure
+
+/**
+ * Everything the feed can be showing.
+ *
+ * The four the assignment asks for are separate cases rather than fields on one
+ * state, because a state with `articles: List` and `error: String?` has states
+ * that make no sense -- an error with articles, a loading spinner with an error --
+ * and something has to decide what those mean. Here nothing has to: they cannot
+ * be written down.
+ */
+@Immutable
+sealed interface FeedUiState {
+
+    /** Nothing to show yet, and a reason to wait. */
+    data object Loading : FeedUiState
+
+    /** The feed loaded and there is genuinely nothing in it. */
+    data object Empty : FeedUiState
+
+    /** The request never got out. Worth offering to try again. */
+    data object Offline : FeedUiState
+
+    /** It got out, and what came back was not usable. */
+    data class Error(val reason: FeedFailure) : FeedUiState
+
+    /**
+     * Articles, and what is happening to them.
+     *
+     * [moreFailed] is how a failed next page is told to the reader without taking
+     * away what they were already reading. Replacing the list with an error screen
+     * because page four did not arrive is losing three pages of work to punish
+     * someone for scrolling.
+     */
+    data class Content(
+        val articles: ImmutableList<ArticleItem>,
+        val canLoadMore: Boolean,
+        val loadingMore: Boolean = false,
+        val moreFailed: FeedFailure? = null,
+    ) : FeedUiState
+}
