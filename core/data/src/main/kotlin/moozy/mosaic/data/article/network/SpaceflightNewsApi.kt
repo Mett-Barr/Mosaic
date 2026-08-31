@@ -7,6 +7,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import kotlinx.serialization.json.JsonElement
 import io.ktor.serialization.kotlinx.json.json
 import moozy.mosaic.domain.model.ArticleItem
 
@@ -76,6 +77,18 @@ internal class SpaceflightNewsApi(private val client: HttpClient) {
             next = page.next?.takeIf { it.continuesTheArticleList() },
             droppedReasons = mapped.droppedReasons,
         )
+    }
+
+    /**
+     * One article by id.
+     *
+     * The row goes through the same mapping as a page's rows: a single article
+     * that the domain would refuse is a dropped row here too, and the caller finds
+     * out the same way -- nothing came back rather than something unusable did.
+     */
+    suspend fun article(id: String): MappedArticles {
+        val row: JsonElement = client.get("$ARTICLES_URL$id/").body()
+        return ArticlePageDto(results = listOf(row)).toArticles()
     }
 
     /**
