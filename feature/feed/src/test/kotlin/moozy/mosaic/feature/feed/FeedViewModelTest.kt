@@ -148,6 +148,7 @@ class FeedViewModelTest {
                 ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
                 ArticlesResult.Loaded(emptyList(), next = null, dropped = 2),
             ),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
         )
 
         feed.state.test {
