@@ -2,6 +2,7 @@ package moozy.mosaic.domain.model
 
 import java.time.Duration
 import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -74,11 +75,23 @@ class FreshnessTest {
     }
 
     @Test
-    fun `the article cadence is the one the feed uses`() {
-        // Articles arrive through the day, not through the minute; a quarter of an
-        // hour is short enough that a reader who comes back after lunch sees new
-        // ones, and long enough that flicking in and out of the app costs nothing.
-        assertTrue(Cadence.ARTICLES.staleAfter <= Duration.ofMinutes(30))
-        assertTrue(Cadence.ARTICLES.staleAfterOnMeteredData >= Cadence.ARTICLES.staleAfter)
+    fun `the cadences are the numbers the README argues for`() {
+        // Pinned rather than bounded. A range lets somebody change the policy to
+        // something the README no longer describes and still be green, and these
+        // numbers are the answer to the assignment's question -- they are not an
+        // implementation detail.
+        assertEquals(Duration.ofMinutes(15), Cadence.ARTICLES.staleAfter)
+        assertEquals(Duration.ofHours(1), Cadence.ARTICLES.staleAfterOnMeteredData)
+        assertEquals(Duration.ofMinutes(10), Cadence.WEATHER.staleAfter)
+        assertEquals(Duration.ofMinutes(30), Cadence.WEATHER.staleAfterOnMeteredData)
+    }
+
+    @Test
+    fun `the weather goes stale sooner than the articles, on either connection`() {
+        // The assignment's own hint: weather changes by the minute, articles by
+        // the hour. If this ever stops being true, one of the two numbers was
+        // changed without the argument being revisited.
+        assertTrue(Cadence.WEATHER.staleAfter < Cadence.ARTICLES.staleAfter)
+        assertTrue(Cadence.WEATHER.staleAfterOnMeteredData < Cadence.ARTICLES.staleAfterOnMeteredData)
     }
 }

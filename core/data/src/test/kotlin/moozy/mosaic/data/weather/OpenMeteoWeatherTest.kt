@@ -11,6 +11,7 @@ import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.WeatherResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -58,10 +59,26 @@ class OpenMeteoWeatherTest {
     }
 
     @Test
-    fun `the reading comes back named after the place, not the time zone`() = runTest {
+    fun `the reading comes back whole, named after the place rather than the time zone`() = runTest {
         val result = answering(forecast).current()
 
-        assertEquals("Taipei", (result as WeatherResult.Loaded).weather.place)
+        val reading = (result as WeatherResult.Loaded).weather
+        assertEquals("Taipei", reading.place)
+        assertEquals(26, reading.temperature)
+        assertEquals(32, reading.high)
+        assertEquals(25, reading.low)
+        assertEquals(Sky.CLOUDY, reading.sky)
+        assertEquals(Instant.parse("2026-09-01T12:00:00Z"), reading.measuredAt)
+    }
+
+    @Test
+    fun `it asks for exactly the fields the card needs and no more`() = runTest {
+        answering(forecast).current()
+
+        val url = requests.single().url
+        assertEquals("temperature_2m,weather_code", url.parameters["current"])
+        assertEquals("temperature_2m_max,temperature_2m_min", url.parameters["daily"])
+        assertEquals("1", url.parameters["forecast_days"])
     }
 
     @Test
