@@ -1,0 +1,65 @@
+# 各模組以 buildUponDefaultConfig 疊加 Detekt 的完整預設規則集；本檔只記錄
+# 專案層級的例外與門檻。CI 仍以 maxIssues: 0 執行，沒有 baseline 可掩蓋既有問題。
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+
+complexity:
+  # Compose 函式的巢狀 UI 樹和參數是畫面結構，不是商業邏輯的分支；非 Compose
+  # 程式碼仍受下列門檻約束。70 行可容納小型資料轉換，25 條路徑保留對真正複雜演算法的警示。
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+    threshold: 60
+  CyclomaticComplexMethod:
+    ignoreAnnotated: ['Composable']
+    threshold: 20
+  LongParameterList:
+    # 畫面參數是明確的 state/event 邊界；測試 fixture 也不應為了湊門檻而失去可讀性。
+    excludes: ['**/test/**', '**/androidTest/**']
+    functionThreshold: 11
+    constructorThreshold: 8
+  NestedBlockDepth:
+    threshold: 6
+  TooManyFunctions:
+    # Calculator 是封裝運算狀態機的單一類別；25 仍會阻擋無界成長。
+    thresholdInClasses: 25
+
+naming:
+  # Compose 規範以 PascalCase 命名可呼叫的 UI；一般 Kotlin 函式仍套用預設 lowerCamelCase。
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+  # Compose 的頂層尺寸常數採 lowerCamelCase，與 Kotlin 常數的大寫規範並存。
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Za-z][_A-Za-z0-9]*'
+
+style:
+  # 向量 path、色碼與 dp 是宣告式 UI 的資料；跳過 Compose 與屬性初值，
+  # 但非 UI 函式中的裸數字（例如計算、條件和索引）仍會被偵測。
+  MagicNumber:
+    ignoreAnnotated: ['Composable']
+    ignorePropertyDeclaration: true
+  MaxLineLength:
+    # API DTO 與可讀的測試案例可達 140 字元；超過此值才要求拆行。
+    maxLineLength: 140
+  ReturnCount:
+    # guard clause 能讓狀態轉換保持平坦；五個 return 以上才要求重構。
+    max: 5
+
+  # UnusedImports 需要型別解析；目前不帶 classpath 的 detekt 在 Compose 擴充函式上
+  # 會產生大量誤報，因此由 Kotlin 編譯器的 allWarningsAsErrors 負責。
+  UnusedImports:
+    active: false
+
+  UnusedParameter:
+    active: true
+  UnusedPrivateClass:
+    active: true
+  # @Preview 的呼叫端在 IDE，靜態分析看不到；只排除這個明確註解。
+  UnusedPrivateMember:
+    active: true
+    ignoreAnnotated: ['Preview']
+  UnusedPrivateProperty:
+    active: true
+    ignoreAnnotated: ['Preview']

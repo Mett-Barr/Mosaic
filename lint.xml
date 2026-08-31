@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      版本提醒降級為 informational。
+
+      Lint 目前指出 AGP 9.1.0 有 9.3.1、Kotlin 2.3.21 有 2.4.10。升 Kotlin 主版本會
+      連帶牽動 KSP、Hilt 與 Compose 編譯器的相容性矩陣，那是一次需要獨立驗證的變更，
+      不該和其他工作混在同一批。
+
+      這裡不是關閉檢查：它仍然會出現在報告裡，只是不列為需要立即處理。
+    -->
+    <issue id="NewerVersionAvailable" severity="informational" />
+    <issue id="AndroidGradlePluginVersion" severity="informational" />
+</lint>

@@ -1,0 +1,10 @@
+# Normalise to LF in the repository. Authored on Windows, built on Linux CI —
+# gradlew has to keep LF endings or the shebang line breaks there.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+gradlew text eol=lf
+
+*.jar binary
+*.webp binary
+*.png binary

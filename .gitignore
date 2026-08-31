@@ -1,0 +1,34 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# IDE：.idea 底下只有少數檔案值得共享，其餘一律忽略
+.idea/*
+!.idea/codeStyles/
+!.idea/inspectionProfiles/
+
+# 簽章金鑰（目前沒有，但加簽章的那天不要靠記憶）
+*.jks
+*.keystore
+keystore.properties
+
+# 建置產物
+*.apk
+*.aab
+/release
+.kotlin/
+
+# Agent 工具設定（本機開發用，非專案產物）
+.claude/
