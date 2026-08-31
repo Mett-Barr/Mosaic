@@ -256,6 +256,7 @@ private fun Retryable(message: String, hint: String, onRetry: () -> Unit) {
 private fun FeedFailure.readAsHint(): String = when (this) {
     is FeedFailure.Offline -> "There is no connection right now."
     is FeedFailure.Timeout -> "The feed took too long to answer."
+    is FeedFailure.Missing -> "The feed is not where it used to be."
     is FeedFailure.Server -> "The feed is having trouble (error $status)."
     is FeedFailure.Unreadable -> "The feed sent something this app could not read."
     is FeedFailure.Unexpected -> "Something unexpected happened."

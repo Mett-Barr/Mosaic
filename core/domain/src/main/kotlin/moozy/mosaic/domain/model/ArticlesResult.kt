@@ -31,7 +31,17 @@ sealed interface FeedFailure {
     /** It left, and nothing came back in time. */
     data class Timeout(override val detail: String? = null) : FeedFailure
 
-    /** Something came back, and it was an error. */
+    /**
+     * The thing asked for is not there.
+     *
+     * Separate from [Server] because it is the one failure that will not fix
+     * itself: everything else is worth another try, and this is worth going back.
+     * The screen should be able to tell those apart without knowing that 404 is
+     * the number it arrives as.
+     */
+    data class Missing(override val detail: String? = null) : FeedFailure
+
+    /** Something came back, and it was an error nothing more specific covers. */
     data class Server(val status: Int, override val detail: String? = null) : FeedFailure
 
     /** Something came back, and it was not something this app can read. */
