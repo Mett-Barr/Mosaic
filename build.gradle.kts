@@ -18,6 +18,54 @@ plugins {
     alias(libs.plugins.module.graph)
 }
 
+// The module split is only worth its cost if something checks it. The compiler
+// enforces one part of it — :core:domain is plain Kotlin, so Android types cannot
+// reach it — but nothing stops a feature from reaching into :core:data or into a
+// sibling feature except a person noticing. Gradle knows the real edges, so the
+// rule is checked here rather than asserted in a document.
+val allowedProjectDependencies = mapOf(
+    ":core:domain" to emptySet(),
+    ":core:data" to setOf(":core:domain"),
+    ":core:ui" to setOf(":core:domain"),
+    ":feature:feed" to setOf(":core:domain", ":core:ui"),
+    ":feature:detail" to setOf(":core:domain", ":core:ui"),
+    ":feature:saved" to setOf(":core:domain", ":core:ui"),
+    // :app is the composition root: it is the one module allowed to see everyone.
+    ":app" to setOf(
+        ":core:domain", ":core:data", ":core:ui",
+        ":feature:feed", ":feature:detail", ":feature:saved",
+    ),
+)
+
+// Subprojects have to be evaluated before their declared dependencies can be read.
+evaluationDependsOnChildren()
+
+val checkModuleDependencies by tasks.registering {
+    group = "verification"
+    description = "Fails when a module depends on one the architecture does not allow."
+    doLast {
+        val violations = allowedProjectDependencies.flatMap { (path, allowed) ->
+            project(path).configurations
+                .flatMap { configuration -> configuration.dependencies }
+                .filterIsInstance<ProjectDependency>()
+                .map { it.path }
+                .distinct()
+                // AGP and KSP add configurations that point a module at itself
+                // (test variants, generated sources); those are not architecture.
+                .filterNot { it == path || it in allowed }
+                .map { "$path must not depend on $it" }
+        }
+        require(violations.isEmpty()) {
+            "Module dependency rules violated:\n" + violations.joinToString("\n") { "  - $it" }
+        }
+    }
+}
+
+// Runs as part of `./gradlew build`, so the gate covers it without a separate step.
+subprojects {
+    tasks.matching { it.name == "check" }.configureEach { dependsOn(checkModuleDependencies) }
+}
+
 moduleGraphConfig {
     readmePath.set("${rootDir}/README.md")
     heading.set("### 模組相依圖")
