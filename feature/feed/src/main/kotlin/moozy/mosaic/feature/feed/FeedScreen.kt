@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +50,7 @@ fun FeedRoute(
         state = state,
         onRetry = viewModel::retry,
         onLoadMore = viewModel::loadMore,
+        onRefresh = viewModel::refresh,
         onOpenArticle = onOpenArticle,
         modifier = modifier,
     )
@@ -58,8 +61,29 @@ fun FeedRoute(
  * one checking that: [FeedUiState] is sealed, so a state added later without a
  * branch to draw it will not build.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
+    state: FeedUiState,
+    onRetry: () -> Unit,
+    onLoadMore: () -> Unit,
+    onRefresh: () -> Unit,
+    onOpenArticle: (ArticleId) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // The gesture belongs to the whole screen, not only the list: a reader who
+    // pulls an "you are offline" screen down is asking the same question.
+    PullToRefreshBox(
+        isRefreshing = (state as? FeedUiState.Content)?.refreshing == true,
+        onRefresh = onRefresh,
+        modifier = modifier,
+    ) {
+        FeedContent(state, onRetry, onLoadMore, onOpenArticle)
+    }
+}
+
+@Composable
+private fun FeedContent(
     state: FeedUiState,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,

@@ -62,8 +62,14 @@ class FeedViewModel @Inject constructor(
     /**
      * Start again from the top, and insist: a reader who asks again has said they
      * want a newer answer than the cache would give them.
+     *
+     * The same call whether it came from the button on an error screen or from
+     * pulling the list down; what differs is what is on screen to keep, and that
+     * is decided where the loading state is built.
      */
-    fun retry() {
+    fun retry() = refresh()
+
+    fun refresh() {
         next = null
         load(from = null, force = true)
     }
@@ -87,12 +93,16 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    private fun beganLoading(before: FeedUiState, from: PageCursor?): FeedUiState =
-        if (from != null && before is FeedUiState.Content) {
+    private fun beganLoading(before: FeedUiState, from: PageCursor?): FeedUiState = when {
+        from != null && before is FeedUiState.Content ->
             before.copy(loadingMore = true, moreFailed = null)
-        } else {
-            FeedUiState.Loading
-        }
+
+        // A refresh over something already readable keeps it. Only a screen with
+        // nothing on it gets the spinner.
+        before is FeedUiState.Content -> before.copy(refreshing = true, moreFailed = null)
+
+        else -> FeedUiState.Loading
+    }
 
     /** A refresh replaces what is on screen; a next page adds to it. */
     private fun kept(before: FeedUiState, from: PageCursor?): List<ArticleItem> =
