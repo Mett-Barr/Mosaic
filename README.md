@@ -25,7 +25,7 @@
 |---|---|
 | `:core:domain` | 純 Kotlin。領域模型與 repository 介面。不相依於任何東西。 |
 | `:core:data` | 網路、持久化、映射。實作 domain 宣告的介面。 |
-| `:core:ui` | 設計系統與共用 composable。 |
+| `:core:ui` | 主題。`:app` 在最上面套一次，底下的畫面透過 Compose 讀它，不透過 Gradle。 |
 | `:feature:feed` | 組合後的 feed。 |
 | `:feature:detail` | 單篇文章。 |
 | `:feature:saved` | 存起來離線閱讀的文章。 |
@@ -56,12 +56,9 @@ graph TB
     :feature:saved["saved"]
   end
   :core:data --> :core:domain
-  :feature:detail --> :core:ui
   :feature:detail --> :core:domain
   :core:ui --> :core:domain
-  :feature:feed --> :core:ui
   :feature:feed --> :core:domain
-  :feature:saved --> :core:ui
   :feature:saved --> :core:domain
   :app --> :core:data
   :app --> :core:domain
@@ -167,7 +164,7 @@ class :app android-application
 | base URL 設定化 | 只有一個公開 endpoint，注入設定現在只會增加樣板 | 有第二個環境時 |
 | 被丟掉的資料列要報給誰 | 原因已經帶回呼叫端，但只有數量被用到 | 有遙測或 log 的去處之後 |
 | 畫面的自動化測試 | Compose 測試需要裝置或 Robolectric，兩者都還沒有；寫一個從未執行過的測試不算證據 | 接上 `connectedDebugAndroidTest` 或 Robolectric 之後 |
-| `:core:ui` 裡真正的設計系統 | 目前它沒有任何 source，畫面直接用 `MaterialTheme`——模組相依是真的，內容不是 | 要嘛放進 `MosaicTheme`，要嘛拿掉那條相依 |
+| `:core:ui` 裡的共用 composable | 目前只有主題。三個 feature 各自畫自己的卡片，等到真的有兩個地方要同一個元件時再搬進去 | 有第二個共用元件時 |
 | offset 游標會漏掉文章 | 去重擋得住重複，擋不住遺漏；要修需要 snapshot 或 keyset 游標 | API 提供游標，或改成整份 snapshot |
 
 ## 這份專案是怎麼做出來的

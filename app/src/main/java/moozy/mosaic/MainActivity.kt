@@ -24,6 +24,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
+import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.feature.detail.DetailRoute
 import moozy.mosaic.feature.feed.FeedRoute
@@ -50,7 +51,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme {
+            MosaicTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Mosaic()
                 }
