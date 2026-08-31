@@ -13,7 +13,10 @@ import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
+import moozy.mosaic.domain.model.Weather
+import moozy.mosaic.domain.model.WeatherResult
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.WeatherRepository
 
 /**
  * Decides what the feed is showing.
@@ -25,6 +28,7 @@ import moozy.mosaic.domain.repository.ArticleRepository
 @HiltViewModel
 class FeedViewModel @Inject constructor(
     private val articles: ArticleRepository,
+    private val weather: WeatherRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<FeedUiState>(FeedUiState.Loading)
@@ -32,9 +36,27 @@ class FeedViewModel @Inject constructor(
 
     private var next: PageCursor? = null
     private var loading = false
+    private var sky: Weather? = null
 
     init {
         load(from = null)
+        // Asked for alongside the articles rather than after them: the two sources
+        // have nothing to do with each other, and making the reader wait for the
+        // weather before seeing the news would be inventing a dependency.
+        viewModelScope.launch {
+            when (val reading = weather.current()) {
+                is WeatherResult.Loaded -> {
+                    sky = reading.weather
+                    val showing = _state.value
+                    if (showing is FeedUiState.Content) {
+                        _state.value = showing.copy(weather = reading.weather)
+                    }
+                }
+
+                // No card, and no error either. The reader came for the articles.
+                is WeatherResult.Failed -> Unit
+            }
+        }
     }
 
     /** Start again from the top. What is on screen now is not worth keeping. */
@@ -92,6 +114,7 @@ class FeedViewModel @Inject constructor(
                 articles = all,
                 canLoadMore = result.next != null,
                 moreFailed = unreadable(result.dropped),
+                weather = sky,
             )
 
             nothingUsable -> FeedUiState.Error(unreadable(result.dropped))

@@ -20,10 +20,14 @@ import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.FileSavedArticles
+import moozy.mosaic.data.weather.OpenMeteoWeather
+import moozy.mosaic.data.weather.Place
+import moozy.mosaic.data.weather.openMeteoClient
 import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.DataCost
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
+import moozy.mosaic.domain.repository.WeatherRepository
 
 /**
  * Where the data layer is assembled.
@@ -65,6 +69,22 @@ internal object DataModule {
         clock = Clock { Instant.now() },
         dataCost = DataCost { context.isOnMeteredConnection() },
     )
+
+    /**
+     * Taipei, because the app has no location permission and asking for one to
+     * put a card at the top of a feed is a poor trade. Where the reader is comes
+     * with a permission dialog, a rationale, a denial path and a settings screen;
+     * a fixed place needs none of that and is honest about what it shows.
+     */
+    @Provides
+    @Singleton
+    fun weatherRepository(@ApplicationContext context: Context): WeatherRepository =
+        OpenMeteoWeather(
+            client = openMeteoClient(OkHttp.create()),
+            place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
+            clock = Clock { Instant.now() },
+            dataCost = DataCost { context.isOnMeteredConnection() },
+        )
 
     /**
      * The reading list lives in the app's own storage: it is the reader's, it is

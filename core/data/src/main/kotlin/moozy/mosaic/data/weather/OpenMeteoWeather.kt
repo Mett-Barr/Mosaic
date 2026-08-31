@@ -1,0 +1,123 @@
+package moozy.mosaic.data.weather
+
+import io.ktor.client.HttpClient
+import io.ktor.client.call.NoTransformationFoundException
+import io.ktor.client.call.body
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.ResponseException
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.serialization.ContentConvertException
+import io.ktor.serialization.kotlinx.json.json
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.serialization.SerializationException
+import moozy.mosaic.domain.model.Cadence
+import moozy.mosaic.domain.model.Clock
+import moozy.mosaic.domain.model.DataCost
+import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.Freshness
+import moozy.mosaic.domain.model.Weather
+import moozy.mosaic.domain.model.WeatherResult
+import moozy.mosaic.domain.repository.WeatherRepository
+
+/** Where the weather is being asked about, and what to call it. */
+internal data class Place(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+)
+
+internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(engine) {
+    expectSuccess = true
+    install(ContentNegotiation) { json(OpenMeteoJson) }
+    install(HttpTimeout) {
+        requestTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS
+        socketTimeoutMillis = SOCKET_TIMEOUT_MILLIS
+    }
+}
+
+/**
+ * The current weather for one place, asked for no more often than it changes.
+ *
+ * The reading is held in memory rather than in a file, which is the difference
+ * between this and the article cache. An article list an hour old is still worth
+ * showing while a fresh one loads; a temperature from the last time the app ran
+ * is not worth showing at all, so there is nothing to keep across launches.
+ */
+internal class OpenMeteoWeather(
+    private val client: HttpClient,
+    private val place: Place,
+    private val clock: Clock,
+    private val dataCost: DataCost,
+    private val freshness: Freshness = Cadence.WEATHER,
+) : WeatherRepository {
+
+    private var lastReading: Weather? = null
+    private var lastAskedAt: Instant? = null
+
+    override suspend fun current(): WeatherResult {
+        val remembered = lastReading
+        if (remembered != null && !freshness.isStale(lastAskedAt, clock.now(), dataCost.isMetered())) {
+            return WeatherResult.Loaded(remembered)
+        }
+        return fetch()
+    }
+
+    @Suppress("TooGenericExceptionCaught", "RethrowCaughtException")
+    private suspend fun fetch(): WeatherResult =
+        try {
+            val forecast: ForecastDto = client.get(FORECAST_URL) {
+                parameter("latitude", place.latitude)
+                parameter("longitude", place.longitude)
+                parameter("current", "temperature_2m,weather_code")
+                parameter("daily", "temperature_2m_max,temperature_2m_min")
+                parameter("timezone", "auto")
+                parameter("forecast_days", 1)
+            }.body()
+            val weather = forecast.toWeather(place.name)
+            // Only a reading is remembered. A failure that was remembered would
+            // stop this asking again at exactly the moment it should.
+            lastReading = weather
+            lastAskedAt = clock.now()
+            WeatherResult.Loaded(weather)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (server: ResponseException) {
+            WeatherResult.Failed(FeedFailure.Server(server.response.status.value, server.message))
+        } catch (unreadable: ContentConvertException) {
+            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
+        } catch (unreadable: NoTransformationFoundException) {
+            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
+        } catch (unreadable: SerializationException) {
+            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
+        } catch (network: IOException) {
+            WeatherResult.Failed(network.asFailure())
+        } catch (unexpected: Exception) {
+            WeatherResult.Failed(FeedFailure.Unexpected(unexpected.message))
+        }
+
+    private fun IOException.asFailure(): FeedFailure = when (this) {
+        is HttpRequestTimeoutException,
+        is ConnectTimeoutException,
+        is SocketTimeoutException,
+        -> FeedFailure.Timeout(message)
+
+        else -> FeedFailure.Offline(message)
+    }
+
+    private companion object {
+        const val FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+    }
+}
+
+private const val REQUEST_TIMEOUT_MILLIS = 15_000L
+private const val CONNECT_TIMEOUT_MILLIS = 10_000L
+private const val SOCKET_TIMEOUT_MILLIS = 15_000L

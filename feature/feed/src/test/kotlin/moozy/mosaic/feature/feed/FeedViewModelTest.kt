@@ -16,9 +16,14 @@ import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
+import moozy.mosaic.domain.model.Sky
+import moozy.mosaic.domain.model.Weather
+import moozy.mosaic.domain.model.WeatherResult
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.WeatherRepository
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -48,6 +53,7 @@ class FeedViewModelTest {
                 override suspend fun articles(after: PageCursor?) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
         )
 
         feed.state.test {
@@ -69,6 +75,46 @@ class FeedViewModelTest {
             val content = awaitItem() as FeedUiState.Content
             assertEquals(listOf("1", "2"), content.articles.map { it.id.value })
             assertTrue(content.canLoadMore)
+        }
+    }
+
+    @Test
+    fun `the weather arrives beside the articles, not instead of them`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
+            FakeWeather(WeatherResult.Loaded(weather())),
+        )
+
+        feed.state.test {
+            val content = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("1"), content.articles.map { it.id.value })
+            assertEquals(weather(), content.weather)
+        }
+    }
+
+    @Test
+    fun `weather that will not load does not take the feed with it`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
+        )
+
+        feed.state.test {
+            val content = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("1"), content.articles.map { it.id.value })
+            assertNull("a card that did not load is not a card", content.weather)
+        }
+    }
+
+    @Test
+    fun `a feed that will not load is a failure even when the weather is fine`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(ArticlesResult.Failed(FeedFailure.Offline())),
+            FakeWeather(WeatherResult.Loaded(weather())),
+        )
+
+        feed.state.test {
+            assertEquals(FeedUiState.Offline, awaitItem())
         }
     }
 
@@ -102,6 +148,7 @@ class FeedViewModelTest {
                 ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
                 ArticlesResult.Loaded(emptyList(), next = null, dropped = 2),
             ),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
         )
 
         feed.state.test {
@@ -142,7 +189,7 @@ class FeedViewModelTest {
             ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
             ArticlesResult.Loaded(listOf(article(2)), next = null),
         )
-        val feed = FeedViewModel(repository)
+        val feed = FeedViewModel(repository, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
 
         feed.state.test {
             assertEquals(listOf("1"), (awaitItem() as FeedUiState.Content).articles.map { it.id.value })
@@ -165,6 +212,7 @@ class FeedViewModelTest {
                 ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
                 ArticlesResult.Failed(FeedFailure.Offline()),
             ),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
         )
 
         feed.state.test {
@@ -188,7 +236,7 @@ class FeedViewModelTest {
             ArticlesResult.Failed(FeedFailure.Offline()),
             ArticlesResult.Loaded(listOf(article(1)), next = null),
         )
-        val feed = FeedViewModel(repository)
+        val feed = FeedViewModel(repository, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
 
         feed.state.test {
             assertEquals(FeedUiState.Offline, awaitItem())
@@ -201,7 +249,24 @@ class FeedViewModelTest {
         assertEquals(listOf(null, null), repository.asked)
     }
 
-    private fun feedOf(vararg results: ArticlesResult) = FeedViewModel(FakeArticles(*results))
+    private fun feedOf(vararg results: ArticlesResult) =
+        FeedViewModel(FakeArticles(*results), FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
+
+    private fun weather() = Weather(
+        place = "Taipei",
+        temperature = 26,
+        high = 32,
+        low = 25,
+        sky = Sky.CLOUDY,
+        measuredAt = Instant.parse("2026-09-01T02:30:00Z"),
+    )
+
+    private class FakeWeather(private val result: WeatherResult) : WeatherRepository {
+        override suspend fun current(): WeatherResult {
+            yield()
+            return result
+        }
+    }
 
     private fun article(id: Int) = ArticleItem(
         id = ArticleId("$id"),

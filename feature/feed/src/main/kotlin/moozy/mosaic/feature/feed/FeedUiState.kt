@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.Weather
 
 /**
  * Everything the feed can be showing.
@@ -32,6 +33,10 @@ sealed interface FeedUiState {
     /**
      * Articles, and what is happening to them.
      *
+     * [weather] is null when there is no reading to show, which includes the case
+     * where asking for one failed. A card nobody can fill is not a card, and it is
+     * not worth an error either: the reader came for the articles.
+     *
      * [moreFailed] is how a failed next page is told to the reader without taking
      * away what they were already reading. Replacing the list with an error screen
      * because page four did not arrive is losing three pages of work to punish
@@ -42,5 +47,6 @@ sealed interface FeedUiState {
         val canLoadMore: Boolean,
         val loadingMore: Boolean = false,
         val moreFailed: FeedFailure? = null,
+        val weather: Weather? = null,
     ) : FeedUiState
 }
