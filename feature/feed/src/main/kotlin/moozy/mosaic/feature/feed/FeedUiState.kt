@@ -46,6 +46,8 @@ sealed interface FeedUiState {
         val articles: ImmutableList<ArticleItem>,
         val canLoadMore: Boolean,
         val loadingMore: Boolean = false,
+        /** A refresh the reader asked for, running with the list still on screen. */
+        val refreshing: Boolean = false,
         val moreFailed: FeedFailure? = null,
         val weather: Weather? = null,
     ) : FeedUiState

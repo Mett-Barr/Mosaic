@@ -301,6 +301,53 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `pulling to refresh keeps the list on screen while it loads`() = runTest {
+        val repository = FakeArticles(
+            ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val feed = FeedViewModel(repository, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
+
+        feed.state.test {
+            awaitItem()
+
+            feed.refresh()
+
+            // Not a spinner where the list was: somebody who pulls a list down is
+            // still reading it, and taking it away to prove something is loading
+            // is a worse answer than leaving it there.
+            val during = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("1"), during.articles.map { it.id.value })
+            assertTrue("the pull should be visibly doing something", during.refreshing)
+
+            val after = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("2"), after.articles.map { it.id.value })
+            assertTrue("and visibly stop", !after.refreshing)
+        }
+        assertEquals(listOf(true), repository.forced)
+    }
+
+    @Test
+    fun `retrying from an error screen has nothing to keep`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(
+                ArticlesResult.Failed(FeedFailure.Offline()),
+                ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ),
+            FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
+        )
+
+        feed.state.test {
+            assertEquals(FeedUiState.Offline, awaitItem())
+
+            feed.refresh()
+
+            assertEquals(FeedUiState.Loading, awaitItem())
+            assertTrue(awaitItem() is FeedUiState.Content)
+        }
+    }
+
+    @Test
     fun `retrying insists, rather than being told the answer is still fresh`() = runTest {
         val repository = FakeArticles(
             ArticlesResult.Loaded(listOf(article(1)), next = null),
@@ -313,7 +360,8 @@ class FeedViewModelTest {
 
             feed.retry()
 
-            assertEquals(FeedUiState.Loading, awaitItem())
+            // The list stays up while it reloads; see the pull-to-refresh case.
+            awaitItem()
             assertEquals(listOf("2"), (awaitItem() as FeedUiState.Content).articles.map { it.id.value })
         }
         assertEquals("a reader asking again should not be answered from a file", listOf(true), repository.forced)
