@@ -192,7 +192,7 @@ class DetailViewModelTest {
     }
 
     @Test
-    fun `an article that will not load can still be let go of`() = runTest {
+    fun `an article that was kept opens with no network at all`() = runTest {
         val kept = FakeSaved(article())
         val detail = DetailViewModel(
             FakeArticle(ArticleResult.Failed(FeedFailure.Offline())),
@@ -202,11 +202,27 @@ class DetailViewModelTest {
         detail.state.test {
             detail.open(ArticleId("39742"))
             awaitItem()
+
+            val state = awaitItem()
+            assertTrue("the kept copy should have been enough, got $state", state is DetailUiState.Content)
+            assertEquals(article(), (state as DetailUiState.Content).article)
+            assertTrue("and it is still marked as kept", state.saved)
+        }
+    }
+
+    @Test
+    fun `an article nobody kept still says there is no network`() = runTest {
+        val detail = DetailViewModel(
+            FakeArticle(ArticleResult.Failed(FeedFailure.Offline())),
+            FakeSaved(),
+        )
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+
             assertTrue(awaitItem() is DetailUiState.Failed)
         }
-
-        // Nothing to keep, and nothing pretending it was kept.
-        assertEquals(listOf(article()), kept.articles.value)
     }
 
     private fun detailOf(result: ArticleResult) = DetailViewModel(FakeArticle(result), FakeSaved())
