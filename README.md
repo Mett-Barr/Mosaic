@@ -1,37 +1,35 @@
 # Mosaic
 
-A single feed assembled from sources that do not resemble each other — articles,
-weather, films — each with its own idea of how quickly it goes stale.
+一份由彼此不相像的來源組成的 feed——文章、天氣、電影——每一種對「多久算過期」
+都有自己的看法。
 
-> **Status: scaffolding.** The module structure, build gate, and working agreement are
-> in place; no feature has been built yet. This README grows with the code, and says
-> only what is true at each commit.
+> **目前狀態：骨架。** 模組結構、建置 gate、協作約定已就位，尚未實作任何功能。
+> 這份 README 隨程式碼一起長，每個 commit 都只寫當下為真的事。
 
-## Run it
+## 執行
 
 ```bash
 ./gradlew :app:installDebug
 ```
 
-Builds from a clean checkout with no configuration step. Minimum SDK 24.
+從乾淨的 checkout 直接建置，不需要任何設定步驟。最低支援 SDK 24。
 
-## How the code is arranged
+## 程式碼怎麼擺
 
-| Module | Contains |
+| 模組 | 內容 |
 |---|---|
-| `:core:domain` | Plain Kotlin. Models and repository interfaces. Depends on nothing. |
-| `:core:data` | Network, persistence, mapping. Implements the domain's interfaces. |
-| `:core:ui` | Design system and shared composables. |
-| `:feature:feed` | The composed feed. |
-| `:feature:detail` | A single article. |
-| `:feature:saved` | Articles kept for offline reading. |
-| `:app` | Wiring, navigation, and the Android entry point. |
+| `:core:domain` | 純 Kotlin。領域模型與 repository 介面。不相依於任何東西。 |
+| `:core:data` | 網路、持久化、映射。實作 domain 宣告的介面。 |
+| `:core:ui` | 設計系統與共用 composable。 |
+| `:feature:feed` | 組合後的 feed。 |
+| `:feature:detail` | 單篇文章。 |
+| `:feature:saved` | 存起來離線閱讀的文章。 |
+| `:app` | 組裝、導覽、Android 進入點。 |
 
-Dependencies point inward. `:core:domain` is a plain Kotlin module with no Android
-dependency at all, which is what stops a DTO or a Compose type from reaching it —
-the build fails rather than a reviewer having to notice.
+相依方向一律向內。`:core:domain` 是純 Kotlin 模組、完全不相依 Android，
+DTO 或 Compose 型別因此**進不去**——不是靠審查時有人注意到，是建置直接失敗。
 
-### Module graph
+### 模組相依圖
 
 ```mermaid
 %%{
@@ -79,36 +77,32 @@ class :feature:saved android-library
 class :app android-application
 
 ```
+## 任務拆解與順序
 
-## Plan & sequencing
+### 怎麼拆
 
-### How the problem was broken up
+拆成「行為」，一個 commit 一個，每個都能獨立審查、獨立 revert。
+行為指的是使用者感覺得到的改變——所以骨架那幾個 commit 標的是
+`build`／`ci`／`docs` 而不是 `feat`：它們沒有改變任何可觀察的東西。
 
-Into behaviours, one per commit — each independently reviewable and revertable. A
-behaviour is something a user could notice, which is why the scaffolding commits are
-labelled `build`/`ci`/`docs` rather than `feat`: they change nothing observable.
+### 順序，以及為什麼
 
-### The order, and why
+1. **骨架**——模組邊界先定，因為在它之前寫的每一個檔案事後都得搬家。
+2. **文章 feed**——單一來源，從清單到內頁走完整條垂直切片。在異質內容進場之前，
+   先用最單純的內容把整條路徑打通。
+3. **離線儲存**——持久化，做在形狀已經穩定下來的內容上。
+4. **異質 feed**——天氣與電影加入文章之中。它**刻意**排在 must-have 的最後：
+   這是整份作業最難的抽象，而在還沒有真實內容可供歸納之前就先選定它，
+   等於是對著猜測做設計。
+5. **Freshness**——各來源各自的過期規則，包含在計費網路上退讓。
 
-1. **Scaffolding** — module boundaries first, because every file written before that
-   decision would have to move afterwards.
-2. **Articles feed** — one source, end to end, list to detail. Establishes the whole
-   vertical slice on the simplest possible content before anything heterogeneous
-   arrives.
-3. **Offline saving** — persistence, on content whose shape has already settled.
-4. **A heterogeneous feed** — weather and films joining the articles. This is deferred
-   until last among the must-haves *on purpose*: it is the hardest abstraction, and
-   choosing it before there is real content to generalise from would mean designing
-   against a guess.
-5. **Freshness** — per-source staleness, including backing off on metered networks.
+### 刻意延後了什麼
 
-### What was deliberately deferred
+發生時當下補寫，而不是最後回頭重建。
 
-To be filled in as it happens, rather than reconstructed at the end.
+## 這份專案是怎麼做出來的
 
-## How this was built
-
-`AGENTS.md` describes the development loop and the human/AI split this project runs on.
-[`DECISIONS.md`](DECISIONS.md) records the choices a reviewer would question.
-[`AI_USAGE.md`](AI_USAGE.md) records what the agent produced and what was rejected.
-[`docs/git-conventions.md`](docs/git-conventions.md) covers commits and branches.
+[`AGENTS.md`](AGENTS.md) 描述開發迴圈，以及人與 AI 的分工落在哪裡。
+[`DECISIONS.md`](DECISIONS.md) 記錄審查者會質疑的每一個選擇。
+[`AI_USAGE.md`](AI_USAGE.md) 記錄 agent 實際產出了什麼、哪些被否決。
+[`docs/git-conventions.md`](docs/git-conventions.md) 是 commit 與分支的慣例。

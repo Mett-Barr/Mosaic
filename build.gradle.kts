@@ -20,7 +20,7 @@ plugins {
 
 moduleGraphConfig {
     readmePath.set("${rootDir}/README.md")
-    heading.set("### Module graph")
+    heading.set("### 模組相依圖")
     orientation.set(Orientation.TOP_TO_BOTTOM)
     linkText.set(LinkText.NONE)
     nestingEnabled.set(false)
