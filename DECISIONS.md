@@ -168,3 +168,26 @@ offline／HTTP 錯誤／回應無法解讀 分成 UI 能用 `when` 窮舉的幾�
 （`ServerResponseException`），那是實作細節，第二個模型也指出了這一點。
 這個代價是有期限的：repository 那個 commit 會把它換成領域的失敗型別，
 屆時這一層的測試改成斷言轉換後的結果。
+
+## 9. repository 不記得讀者讀到哪裡
+
+**選了** —— `suspend fun articles(after: PageCursor?)`：游標由呼叫端傳進來，
+repository 自己不持有「我在第幾頁」。失敗用 sealed 的 `FeedFailure` 回答，不再往上丟例外。
+
+**當時還考慮**
+
+- **有狀態的 repository**：內部持有 `Flow<List<ArticleItem>>` 與 `loadMore()`。
+  這是 Now in Android 那一系的形狀，UI 只要收 flow 很省事。代價是**一份清單只有一個位置**：
+  兩個畫面同時看同一個 repository 會互相把對方的清單移動掉；測試也得先把它推到某個狀態
+  才能斷言下一步。
+- **Paging 3**。它把載入、預抓、重試、錯誤與 UI 綁進一套框架合約。這份作業要考的正好是
+  freshness 與失敗語意要怎麼自己定義——交給 Paging 之後，那些決定會變成「Paging 怎麼做」，
+  而不是我怎麼想。
+
+**取捨** —— 「已經載入的清單」要有人保管，而那個人變成 ViewModel。這是刻意的：
+**讀者讀到哪裡**是畫面的狀態，不是資料的狀態。等離線快取進場時，快取仍然會住在
+repository（那是資料的狀態），兩者不衝突。
+
+**失敗為什麼分四種而不是一個訊息** —— 作業要求 loading／empty／error／offline 是四個
+不同的畫面。畫面沒辦法從一個字串裡選出來，所以差異必須在還知道差異的那一層被固定下來，
+也就是這裡。再上一層，「沒有網路」與「伺服器壞了」都只是一個空白畫面。

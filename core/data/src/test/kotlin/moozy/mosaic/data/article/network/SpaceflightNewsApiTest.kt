@@ -90,6 +90,17 @@ class SpaceflightNewsApiTest {
     }
 
     @Test
+    fun `a cursor that does not lead back into the list is not followed either`() = runTest {
+        apiReturning(page("null", row(1)))
+            .articles(limit = 20, after = "https://elsewhere.example.com/v4/articles/?offset=20")
+
+        val asked = requests.single().url
+        assertEquals("api.spaceflightnewsapi.net", asked.host)
+        assertEquals("20", asked.parameters["limit"])
+        assertNull(asked.parameters["offset"])
+    }
+
+    @Test
     fun `the last page does not claim there is more`() = runTest {
         val page = apiReturning(page("null", row(1))).articles(limit = 20)
 
