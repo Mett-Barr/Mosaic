@@ -210,3 +210,24 @@ repository（那是資料的狀態），兩者不衝突。
 
 **下一頁失敗是 `Content` 的一個欄位，不是一個狀態** —— 因為第四頁沒到而把前三頁換成錯誤
 畫面，是拿讀者已經讀到的東西去懲罰他捲動。所以它是清單底部的一行字，不是整個畫面。
+
+## 11. 導覽用 Navigation 3，而不是自己管一個 back stack
+
+**選了** —— `NavDisplay` ＋ `rememberNavBackStack`，key 是 `@Serializable` 的型別。
+文章 id 以 `String` 跨越導覽邊界，`ArticleId` 留在領域層。
+
+**當時還考慮**
+
+- **自己拿一個 `rememberSaveable` 的狀態切畫面。** 兩個畫面時這是最省的寫法，八行就好。
+  但 saved 進來就是第三個畫面，而且 back stack 的還原（旋轉、行程被回收）要自己寫，
+  那正是導覽函式庫存在的理由。
+- **Navigation Compose（2.x）。** 成熟得多，但它的 route 是字串，參數要編碼進 URL，
+  型別安全是後來補上去的。Nav3 的 back stack 就是一個可觀察的 `List<NavKey>`，
+  這對「畫面狀態屬於畫面」這個立場（見第 9、10 則）是一致的。
+
+**取捨** —— Nav3 還很新，API 會動：實測 `NavDisplay` 的 `onBack` 簽章就與手上的範例不同，
+`entry` 也不是可以單獨 import 的函式而是 scope 的成員。換到穩定版之前，升級要當成一次
+獨立的變更來驗。
+
+**為什麼 id 是 String** —— 還原 back stack 靠序列化，而「寫進 Bundle 的東西長什麼樣」
+是回到某個畫面的細節，不是領域的細節。`ArticleId` 在導覽的另一端才被重新造出來。

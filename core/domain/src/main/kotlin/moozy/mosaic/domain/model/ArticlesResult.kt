@@ -68,3 +68,15 @@ sealed interface ArticlesResult {
 
     data class Failed(val reason: FeedFailure) : ArticlesResult
 }
+
+/**
+ * What asking for one article produced. Separate from [ArticlesResult] because the
+ * questions are different: a list can be empty and still be an answer, and a single
+ * article cannot.
+ */
+sealed interface ArticleResult {
+
+    data class Loaded(val article: ArticleItem) : ArticleResult
+
+    data class Failed(val reason: FeedFailure) : ArticleResult
+}

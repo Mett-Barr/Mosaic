@@ -32,16 +32,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
 
 @Composable
-fun FeedRoute(modifier: Modifier = Modifier, viewModel: FeedViewModel = hiltViewModel()) {
+fun FeedRoute(
+    onOpenArticle: (ArticleId) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: FeedViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     FeedScreen(
         state = state,
         onRetry = viewModel::retry,
         onLoadMore = viewModel::loadMore,
+        onOpenArticle = onOpenArticle,
         modifier = modifier,
     )
 }
@@ -56,6 +62,7 @@ fun FeedScreen(
     state: FeedUiState,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
+    onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (state) {
@@ -81,7 +88,7 @@ fun FeedScreen(
             )
         }
 
-        is FeedUiState.Content -> ArticleList(state, onLoadMore, modifier)
+        is FeedUiState.Content -> ArticleList(state, onLoadMore, onOpenArticle, modifier)
     }
 }
 
@@ -89,6 +96,7 @@ fun FeedScreen(
 private fun ArticleList(
     state: FeedUiState.Content,
     onLoadMore: () -> Unit,
+    onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -109,7 +117,9 @@ private fun ArticleList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(state.articles, key = { it.id.value }) { article -> ArticleCard(article) }
+        items(state.articles, key = { it.id.value }) { article ->
+            ArticleCard(article, onOpen = { onOpenArticle(article.id) })
+        }
 
         if (state.loadingMore) {
             item { Centred(Modifier.fillMaxWidth()) { CircularProgressIndicator() } }
@@ -138,8 +148,8 @@ private fun ArticleList(
 }
 
 @Composable
-private fun ArticleCard(article: ArticleItem, modifier: Modifier = Modifier) {
-    Card(modifier = modifier.fillMaxWidth()) {
+private fun ArticleCard(article: ArticleItem, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Card(onClick = onOpen, modifier = modifier.fillMaxWidth()) {
         article.imageUrl?.let { url ->
             AsyncImage(
                 model = url,

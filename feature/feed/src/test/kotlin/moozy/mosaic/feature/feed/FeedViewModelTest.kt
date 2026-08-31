@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.yield
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
+import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
@@ -45,6 +46,7 @@ class FeedViewModelTest {
         val feed = FeedViewModel(
             object : ArticleRepository {
                 override suspend fun articles(after: PageCursor?) = gate.await()
+                override suspend fun article(id: ArticleId) = notAsked()
             },
         )
 
@@ -215,6 +217,8 @@ class FeedViewModelTest {
         private val queue = ArrayDeque(results.toList())
         val asked = mutableListOf<PageCursor?>()
 
+        override suspend fun article(id: ArticleId) = notAsked()
+
         override suspend fun articles(after: PageCursor?): ArticlesResult {
             asked += after
             // A real one goes to the network and therefore suspends. Without this,
@@ -227,6 +231,9 @@ class FeedViewModelTest {
     }
 
     private companion object {
+        /** The feed never asks for a single article; the detail screen does. */
+        fun notAsked(): Nothing = error("the feed should not ask for one article")
+
         const val NEXT = "https://api.spaceflightnewsapi.net/v4/articles/?limit=20&offset=20"
     }
 }

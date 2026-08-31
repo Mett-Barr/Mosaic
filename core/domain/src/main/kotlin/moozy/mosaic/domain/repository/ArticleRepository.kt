@@ -1,5 +1,7 @@
 package moozy.mosaic.domain.repository
 
+import moozy.mosaic.domain.model.ArticleId
+import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.PageCursor
 
@@ -18,4 +20,13 @@ import moozy.mosaic.domain.model.PageCursor
 interface ArticleRepository {
 
     suspend fun articles(after: PageCursor?): ArticlesResult
+
+    /**
+     * One article, for a reader who opened it.
+     *
+     * It is asked for again rather than carried over from the list, because the
+     * list is a screen's worth of state and a deep link has no list behind it.
+     * Once there is a cache this is where it will be read from first.
+     */
+    suspend fun article(id: ArticleId): ArticleResult
 }
