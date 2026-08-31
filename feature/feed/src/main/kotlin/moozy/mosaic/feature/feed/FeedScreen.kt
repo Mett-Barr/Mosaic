@@ -35,6 +35,7 @@ import java.time.format.DateTimeFormatter
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.Weather
 
 @Composable
 fun FeedRoute(
@@ -117,6 +118,10 @@ private fun ArticleList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        state.weather?.let { weather ->
+            item(key = "weather") { WeatherCard(weather) }
+        }
+
         items(state.articles, key = { it.id.value }) { article ->
             ArticleCard(article, onOpen = { onOpenArticle(article.id) })
         }
