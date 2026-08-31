@@ -19,7 +19,13 @@ import moozy.mosaic.domain.model.PageCursor
  */
 interface ArticleRepository {
 
-    suspend fun articles(after: PageCursor?): ArticlesResult
+    /**
+     * [force] is a reader saying they want a newer answer than the one that would
+     * otherwise be given. Whatever policy sits between here and the network is
+     * expected to step aside: a policy exists so the app does not spend somebody's
+     * data without being asked, not so it can decline when they do ask.
+     */
+    suspend fun articles(after: PageCursor?, force: Boolean = false): ArticlesResult
 
     /**
      * One article, for a reader who opened it.
