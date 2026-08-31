@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +29,7 @@ class DetailViewModel @Inject constructor(
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
 
     private var showing: ArticleId? = null
+    private var loading: Job? = null
 
     fun open(id: ArticleId) {
         if (id == showing) return
@@ -40,7 +42,11 @@ class DetailViewModel @Inject constructor(
     }
 
     private fun load(id: ArticleId) {
-        viewModelScope.launch {
+        // Whoever was asked before is answering about an article nobody is
+        // looking at any more. Letting it finish would change the screen under
+        // the reader into something they did not ask for.
+        loading?.cancel()
+        loading = viewModelScope.launch {
             _state.value = DetailUiState.Loading
             _state.value = when (val result = articles.article(id)) {
                 is ArticleResult.Loaded -> DetailUiState.Content(result.article)
