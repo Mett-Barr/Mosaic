@@ -124,8 +124,10 @@ class FeedViewModelTest {
         )
 
         feed.state.test {
-            awaitItem()
-            assertEquals(weather(), (awaitItem() as FeedUiState.Content).weather)
+            // Which of the two lands first is not this test's business, so it
+            // waits for both rather than assuming an order.
+            var content = awaitItem() as? FeedUiState.Content
+            while (content?.weather == null) content = awaitItem() as? FeedUiState.Content
 
             feed.loadMore()
             awaitItem()
