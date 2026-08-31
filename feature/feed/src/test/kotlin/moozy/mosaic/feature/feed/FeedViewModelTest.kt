@@ -50,7 +50,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?) = gate.await()
+                override suspend fun articles(after: PageCursor?, force: Boolean) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(WeatherResult.Failed(FeedFailure.Offline())),
@@ -97,7 +97,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?) = gate.await()
+                override suspend fun articles(after: PageCursor?, force: Boolean) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(WeatherResult.Loaded(weather())),

@@ -50,11 +50,16 @@ internal class CachingArticles(
     private val freshness: Freshness = Cadence.ARTICLES,
 ) : ArticleRepository {
 
-    override suspend fun articles(after: PageCursor?): ArticlesResult {
+    override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
         if (after != null) return network.articles(after)
 
         val cached = cache.read()
-        if (cached != null && !freshness.isStale(cached.fetchedAt, clock.now(), dataCost.isMetered())) {
+        // `force` is a reader asking again. The policy stands aside for that; it
+        // exists to stop the app spending their data unasked, not to decline when
+        // they ask.
+        if (cached != null && !force &&
+            !freshness.isStale(cached.fetchedAt, clock.now(), dataCost.isMetered())
+        ) {
             return cached.asResult()
         }
 

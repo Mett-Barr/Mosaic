@@ -59,10 +59,13 @@ class FeedViewModel @Inject constructor(
         }
     }
 
-    /** Start again from the top. What is on screen now is not worth keeping. */
+    /**
+     * Start again from the top, and insist: a reader who asks again has said they
+     * want a newer answer than the cache would give them.
+     */
     fun retry() {
         next = null
-        load(from = null)
+        load(from = null, force = true)
     }
 
     /** Ask for the page after the last one, if the source said there is one. */
@@ -70,13 +73,13 @@ class FeedViewModel @Inject constructor(
         load(from = next ?: return)
     }
 
-    private fun load(from: PageCursor?) {
+    private fun load(from: PageCursor?, force: Boolean = false) {
         if (loading) return
         loading = true
         val before = _state.value
         viewModelScope.launch {
             _state.value = beganLoading(before, from)
-            _state.value = when (val result = articles.articles(after = from)) {
+            _state.value = when (val result = articles.articles(after = from, force = force)) {
                 is ArticlesResult.Loaded -> loaded(result, before, from)
                 is ArticlesResult.Failed -> failed(result.reason, before, from)
             }

@@ -188,7 +188,7 @@ class CachingArticlesTest {
         private val queue = ArrayDeque(answers.toList())
         var calls = 0
 
-        override suspend fun articles(after: PageCursor?): ArticlesResult {
+        override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
             calls++
             return queue.removeFirstOrNull() ?: error("the feed asked for a page nobody prepared")
         }
