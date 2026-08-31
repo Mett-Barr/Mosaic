@@ -61,14 +61,28 @@ class OneArticleTest {
     }
 
     @Test
-    fun `an article that is not there says so, and is not confused with being offline`() = runTest {
+    fun `an article that is not there is missing, not a server that misbehaved`() = runTest {
         val result = repositoryWith(MockEngine { respondError(HttpStatusCode.NotFound) })
             .article(ArticleId("1"))
 
+        // The screen has to decide whether to offer a retry, and it should not
+        // have to know what 404 means to do that. "Gone" is the answer; the
+        // status code is how this layer found out.
         assertTrue("expected a failure, got $result", result is ArticleResult.Failed)
+        assertTrue(
+            "expected it to say the article is gone, got ${(result as ArticleResult.Failed).reason}",
+            result.reason is FeedFailure.Missing,
+        )
+    }
+
+    @Test
+    fun `a server that broke is still a server that broke`() = runTest {
+        val result = repositoryWith(MockEngine { respondError(HttpStatusCode.InternalServerError) })
+            .article(ArticleId("1"))
+
         val reason = (result as ArticleResult.Failed).reason
         assertTrue("expected a server failure, got $reason", reason is FeedFailure.Server)
-        assertEquals(HttpStatusCode.NotFound.value, (reason as FeedFailure.Server).status)
+        assertEquals(HttpStatusCode.InternalServerError.value, (reason as FeedFailure.Server).status)
     }
 
     @Test
