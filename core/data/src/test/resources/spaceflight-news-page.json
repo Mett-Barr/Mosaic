@@ -1,0 +1,69 @@
+{
+  "count": 35888,
+  "next": "https://api.spaceflightnewsapi.net/v4/articles/?limit=3&offset=3",
+  "previous": null,
+  "results": [
+    {
+      "id": 39742,
+      "title": "Roman Commissioning",
+      "authors": [
+        {
+          "name": "NASA",
+          "socials": null
+        }
+      ],
+      "url": "https://science.nasa.gov/missions/roman-space-telescope/roman-commissioning/",
+      "image_url": "https://assets.science.nasa.gov/dynamicimage/assets/science/missions/rst/spacecraft-illustrations/RST_Beauty_S2_4K_60_ProRes.00422_print.jpg",
+      "news_site": "NASA",
+      "summary": "Where is Roman? Roman is making its three-month journey from Earth to Sun-Earth Lagrange Point 2, or L2. Along the way, Roman is undergoing a process called commissioning, where systems are turned on, adjusted, calibrated, and prepared for science operations. Commissioning is the time for scientists and engineers to make sure that Roman is performing […]",
+      "published_at": "2026-08-31T12:16:53Z",
+      "updated_at": "2026-08-31T12:50:13.073019Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 39741,
+      "title": "SES Awards OHB €1 billion for IRIS2 MEO Satellites",
+      "authors": [
+        {
+          "name": "European Spaceflight",
+          "socials": null
+        }
+      ],
+      "url": "https://europeanspaceflight.com/ses-awards-ohb-e1-billion-for-iris2-meo-satellites/",
+      "image_url": "https://europeanspaceflight.com/wp-content/uploads/2026/08/SES-Awards-OHB-1-billion-Euros-for-IRIS2-MEO-Satellites.webp",
+      "news_site": "European Spaceflight",
+      "summary": "European satellite operator SES has awarded OHB a contract worth almost €1 billion to develop and build satellite platforms for the medium Earth orbit component of Europe’s €15.6 billion IRIS2 secure communications constellation. OHB announced that it had been awarded the contract on 31 August, describing it as the first major industrial order awarded since […]\nThe post SES Awards OHB €1 billion for IRIS2 MEO Satellites appeared first on European Spaceflight.",
+      "published_at": "2026-08-31T11:09:59Z",
+      "updated_at": "2026-08-31T11:10:15.286526Z",
+      "featured": false,
+      "launches": [],
+      "events": []
+    },
+    {
+      "id": 39739,
+      "title": "Roman lifts off on a mission to survey the infrared sky",
+      "authors": [
+        {
+          "name": "ESA",
+          "socials": null
+        }
+      ],
+      "url": "https://www.esa.int/ESA_Multimedia/Images/2026/08/Roman_lifts_off_on_a_mission_to_survey_the_infrared_sky",
+      "image_url": "https://www.esa.int/var/esa/storage/images/esa_multimedia/images/2026/08/roman_lifts_off_on_a_mission_to_survey_the_infrared_sky/27439669-7-eng-GB/Roman_lifts_off_on_a_mission_to_survey_the_infrared_sky_card_full.jpg",
+      "news_site": "ESA",
+      "summary": "NASA’s Nancy Grace Roman Space Telescope lifted off on a SpaceX Falcon Heavy rocket from NASA’s Kennedy Space Center in Florida, USA, at 07:26 EDT / 12:26 BST/ 13:26 CEST on 30 August 2026. With the successful launch, Roman began its mission to survey the sky in visible to near-infrared light to help reveal the nature of dark energy and dark matter. The telescope will also investigate the true diversity of exoplanets in our galaxy.",
+      "published_at": "2026-08-31T07:00:00Z",
+      "updated_at": "2026-08-31T08:34:06.341202Z",
+      "featured": false,
+      "launches": [
+        {
+          "launch_id": "521f3a1c-f977-4306-9b7f-495858719adf",
+          "provider": "Launch Library 2"
+        }
+      ],
+      "events": []
+    }
+  ]
+}
