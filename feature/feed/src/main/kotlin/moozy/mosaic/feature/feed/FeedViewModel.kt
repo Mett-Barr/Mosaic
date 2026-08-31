@@ -110,7 +110,11 @@ class FeedViewModel @Inject constructor(
     ): FeedUiState {
         next = result.next
         val keeping = kept(before, from)
-        val all = (keeping + result.articles).toImmutableList()
+        // By id, keeping the copy already on screen. A page fetched against an
+        // offset from an older version of the list can repeat what the reader is
+        // looking at, and the list is keyed by id -- Compose throws on a repeat
+        // rather than drawing one of them.
+        val all = (keeping + result.articles).distinctBy { it.id }.toImmutableList()
         val nothingUsable = result.articles.isEmpty() && result.dropped > 0
         return when {
             nothingUsable && keeping.isNotEmpty() -> FeedUiState.Content(
