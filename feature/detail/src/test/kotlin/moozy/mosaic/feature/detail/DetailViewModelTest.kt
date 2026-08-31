@@ -16,7 +16,10 @@ import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.SavedArticles
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -48,6 +51,7 @@ class DetailViewModelTest {
                 override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
                 override suspend fun article(id: ArticleId) = gate.await()
             },
+            FakeSaved(),
         )
 
         detail.state.test {
@@ -68,8 +72,8 @@ class DetailViewModelTest {
             detail.open(ArticleId("39742"))
             awaitItem()
 
-            val content = awaitItem() as DetailUiState.Content
-            assertEquals("Roman Commissioning", content.article.title)
+            val shown = (awaitItem() as DetailUiState.Content).article
+            assertEquals(article(), shown)
         }
     }
 
@@ -91,9 +95,35 @@ class DetailViewModelTest {
     }
 
     @Test
+    fun `an answer for an article the reader has left cannot replace the one they are on`() = runTest {
+        val slowFirst = CompletableDeferred<ArticleResult>()
+        val detail = DetailViewModel(
+            object : ArticleRepository {
+                override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+                override suspend fun article(id: ArticleId): ArticleResult =
+                    if (id.value == "1") slowFirst.await() else ArticleResult.Loaded(article("2", "Second"))
+            },
+            FakeSaved(),
+        )
+
+        detail.state.test {
+            detail.open(ArticleId("1"))
+            assertEquals(DetailUiState.Loading, awaitItem())
+
+            detail.open(ArticleId("2"))
+            assertEquals("Second", (awaitItem() as DetailUiState.Content).article.title)
+
+            // The first article finally answers. Nobody is waiting for it any more.
+            slowFirst.complete(ArticleResult.Loaded(article("1", "First")))
+
+            expectNoEvents()
+        }
+    }
+
+    @Test
     fun `opening the same article twice does not ask twice`() = runTest {
         val repository = FakeArticle(ArticleResult.Loaded(article()))
-        val detail = DetailViewModel(repository)
+        val detail = DetailViewModel(repository, FakeSaved())
 
         detail.state.test {
             detail.open(ArticleId("39742"))
@@ -112,7 +142,7 @@ class DetailViewModelTest {
             ArticleResult.Failed(FeedFailure.Offline()),
             ArticleResult.Loaded(article()),
         )
-        val detail = DetailViewModel(repository)
+        val detail = DetailViewModel(repository, FakeSaved())
 
         detail.state.test {
             detail.open(ArticleId("39742"))
@@ -127,17 +157,98 @@ class DetailViewModelTest {
         assertEquals(listOf(ArticleId("39742"), ArticleId("39742")), repository.asked)
     }
 
-    private fun detailOf(result: ArticleResult) = DetailViewModel(FakeArticle(result))
+    @Test
+    fun `an article the reader kept says so`() = runTest {
+        val kept = FakeSaved()
+        val detail = DetailViewModel(FakeArticle(ArticleResult.Loaded(article())), kept)
 
-    private fun article() = ArticleItem(
-        id = ArticleId("39742"),
-        title = "Roman Commissioning",
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+            assertTrue("nothing is kept yet", !(awaitItem() as DetailUiState.Content).saved)
+
+            detail.keep()
+
+            assertTrue("the reader kept it", (awaitItem() as DetailUiState.Content).saved)
+        }
+        assertEquals(listOf(article()), kept.articles.value)
+    }
+
+    @Test
+    fun `an article the reader let go of is dropped from what was kept`() = runTest {
+        val kept = FakeSaved(article())
+        val detail = DetailViewModel(FakeArticle(ArticleResult.Loaded(article())), kept)
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+            assertTrue("it starts kept", (awaitItem() as DetailUiState.Content).saved)
+
+            detail.letGo()
+
+            assertTrue("no longer kept", !(awaitItem() as DetailUiState.Content).saved)
+        }
+        assertEquals(emptyList<ArticleItem>(), kept.articles.value)
+    }
+
+    @Test
+    fun `an article that was kept opens with no network at all`() = runTest {
+        val kept = FakeSaved(article())
+        val detail = DetailViewModel(
+            FakeArticle(ArticleResult.Failed(FeedFailure.Offline())),
+            kept,
+        )
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+
+            val state = awaitItem()
+            assertTrue("the kept copy should have been enough, got $state", state is DetailUiState.Content)
+            assertEquals(article(), (state as DetailUiState.Content).article)
+            assertTrue("and it is still marked as kept", state.saved)
+        }
+    }
+
+    @Test
+    fun `an article nobody kept still says there is no network`() = runTest {
+        val detail = DetailViewModel(
+            FakeArticle(ArticleResult.Failed(FeedFailure.Offline())),
+            FakeSaved(),
+        )
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+
+            assertTrue(awaitItem() is DetailUiState.Failed)
+        }
+    }
+
+    private fun detailOf(result: ArticleResult) = DetailViewModel(FakeArticle(result), FakeSaved())
+
+    private fun article(id: String = "39742", title: String = "Roman Commissioning") = ArticleItem(
+        id = ArticleId(id),
+        title = title,
         summary = "Where is Roman?",
         source = "NASA",
         url = "https://science.nasa.gov/roman/",
-        imageUrl = null,
+        imageUrl = "https://assets.science.nasa.gov/roman.jpg",
         publishedAt = Instant.parse("2026-08-31T12:16:53Z"),
     )
+
+    private class FakeSaved(vararg initial: ArticleItem) : SavedArticles {
+        val articles = MutableStateFlow(initial.toList())
+        override val saved: Flow<List<ArticleItem>> = articles
+
+        override suspend fun save(article: ArticleItem) {
+            articles.value = listOf(article) + articles.value.filterNot { it.id == article.id }
+        }
+
+        override suspend fun forget(id: ArticleId) {
+            articles.value = articles.value.filterNot { it.id == id }
+        }
+    }
 
     private class FakeArticle(vararg results: ArticleResult) : ArticleRepository {
         private val queue = ArrayDeque(results.toList())

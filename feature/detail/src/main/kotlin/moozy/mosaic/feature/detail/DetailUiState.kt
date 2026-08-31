@@ -16,7 +16,12 @@ sealed interface DetailUiState {
 
     data object Loading : DetailUiState
 
-    data class Content(val article: ArticleItem) : DetailUiState
+    /**
+     * [saved] is whether the reader kept this one. It lives on the state rather
+     * than being asked for separately so that the button and the article cannot
+     * disagree about which article they are describing.
+     */
+    data class Content(val article: ArticleItem, val saved: Boolean = false) : DetailUiState
 
     data class Failed(val reason: FeedFailure) : DetailUiState
 }

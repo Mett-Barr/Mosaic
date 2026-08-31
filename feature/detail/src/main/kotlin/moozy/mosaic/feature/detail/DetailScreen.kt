@@ -39,7 +39,14 @@ fun DetailRoute(
 ) {
     LaunchedEffect(id) { viewModel.open(id) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    DetailScreen(state = state, onRetry = viewModel::retry, onBack = onBack, modifier = modifier)
+    DetailScreen(
+        state = state,
+        onRetry = viewModel::retry,
+        onBack = onBack,
+        onKeep = viewModel::keep,
+        onLetGo = viewModel::letGo,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -47,6 +54,8 @@ fun DetailScreen(
     state: DetailUiState,
     onRetry: () -> Unit,
     onBack: () -> Unit,
+    onKeep: () -> Unit,
+    onLetGo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (state) {
@@ -66,12 +75,19 @@ fun DetailScreen(
             }
         }
 
-        is DetailUiState.Content -> Article(state.article, onBack, modifier)
+        is DetailUiState.Content -> Article(state, onBack, onKeep, onLetGo, modifier)
     }
 }
 
 @Composable
-private fun Article(article: ArticleItem, onBack: () -> Unit, modifier: Modifier = Modifier) {
+private fun Article(
+    state: DetailUiState.Content,
+    onBack: () -> Unit,
+    onKeep: () -> Unit,
+    onLetGo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val article = state.article
     val uriHandler = LocalUriHandler.current
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -102,6 +118,11 @@ private fun Article(article: ArticleItem, onBack: () -> Unit, modifier: Modifier
             // looks like the article and is not.
             Button(onClick = { uriHandler.openUri(article.url) }) {
                 Text("Read the full article at ${article.source}")
+            }
+            // Kept articles stay readable with no network, which is the whole
+            // reason the button is here rather than a bookmark somewhere else.
+            OutlinedButton(onClick = if (state.saved) onLetGo else onKeep) {
+                Text(if (state.saved) "Saved for offline — tap to remove" else "Save to read offline")
             }
             OutlinedButton(onClick = onBack) { Text("Back to the feed") }
         }

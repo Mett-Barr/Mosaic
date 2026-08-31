@@ -158,3 +158,26 @@ Windows 工作樹是 CRLF 無害。它看的是工作樹而不是 index。
 
 第 1 項是這一輪最重要的：**我寫的自動載入會在失敗後不斷重試**。
 單元測試看不到它——那是 Compose effect 的行為——而它正好打中作業唯一明講「不要浪費」的東西。
+
+### detail 那一段——第二個模型的獨立審查（**這一輪的程序是錯的**）
+
+**先說程序**：這一段我為了趕進度，**先 commit 併回 `main` 才找它審**，
+違反 `AGENTS.md` 迴圈的第 7 步（審查在提交之前）。它找到的問題因此變成後續的修正 commit
+而不是提交前的修改。記在這裡是因為這正是 `AI_USAGE.md` 存在的理由——
+規則沒守住的時候要看得出來。
+
+第一次派工還中途死掉（`-o` 未落檔、殘留兩顆行程），事故記進本機的
+`reference/codex-invocation-errors.md`；重派後正常。
+
+| # | 它說的 | 處置 |
+|---|---|---|
+| 1 | `DetailViewModel` 落在 Activity 的 ViewModelStore：`Feed → A → B → 返回 A` 會看到 B 的內容，因為 `showing` 還停在 B | **採納。**它的「只能改一件事」。加 `rememberViewModelStoreNavEntryDecorator()`，每個 entry 有自己的 ViewModel |
+| 2 | 沒有取消前一個請求：慢的 A 回來會蓋掉讀者正在看的 B | **採納。**先寫紅燈測試（`Expected no events but found Item(Content(...title=First...))`）再修 |
+| 3 | 測試的假物件不看傳進去的 id，回傳固定 fixture 也能過 | **採納。**假物件改成按 id 回答，斷言改成比對整個 `ArticleItem` |
+| 4 | 404 變成 `FeedFailure.Server(404)`，UI 再判斷 `status == 404`——HTTP 細節洩漏到畫面 | **同意，尚未修。**要加 `FeedFailure.Missing` 並改測試契約，列進 `.open-questions.md` |
+| 5 | detail 沒有 TopAppBar，返回只在畫面底部；長文章要捲到底才看得到 | **同意，尚未修。**列進 `.open-questions.md` |
+| 6 | 快速點擊會 push 兩次同一個 detail（缺 `dropUnlessResumed`） | **同意，尚未修。**列進 `.open-questions.md` |
+| 7 | 下一個 must-have 應該是 **save/unsave＋離線閱讀**，再來 freshness，最後異質 feed | **接受它的順序。**理由是「先讓一條流程完整可靠，再擴張來源」，比我原本想的 freshness 優先更站得住腳 |
+
+第 1 項是我自己完全沒想到的：**`hiltViewModel()` 在 `NavDisplay` 裡預設落在 Activity scope**。
+單元測試看不到它，因為它根本不是 ViewModel 的邏輯問題，是接線問題。
