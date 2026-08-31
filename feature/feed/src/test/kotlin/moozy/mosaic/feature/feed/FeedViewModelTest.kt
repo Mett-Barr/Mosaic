@@ -93,6 +93,50 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `weather that arrives before the articles is still there when they do`() = runTest {
+        val gate = CompletableDeferred<ArticlesResult>()
+        val feed = FeedViewModel(
+            object : ArticleRepository {
+                override suspend fun articles(after: PageCursor?) = gate.await()
+                override suspend fun article(id: ArticleId) = notAsked()
+            },
+            FakeWeather(WeatherResult.Loaded(weather())),
+        )
+
+        feed.state.test {
+            assertEquals(FeedUiState.Loading, awaitItem())
+
+            gate.complete(ArticlesResult.Loaded(listOf(article(1)), next = null))
+
+            val content = awaitItem() as FeedUiState.Content
+            assertEquals("the card should not depend on which answer came back first", weather(), content.weather)
+        }
+    }
+
+    @Test
+    fun `the weather survives the arrival of the next page`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(
+                ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
+                ArticlesResult.Loaded(listOf(article(2)), next = null),
+            ),
+            FakeWeather(WeatherResult.Loaded(weather())),
+        )
+
+        feed.state.test {
+            awaitItem()
+            assertEquals(weather(), (awaitItem() as FeedUiState.Content).weather)
+
+            feed.loadMore()
+            awaitItem()
+
+            val more = awaitItem() as FeedUiState.Content
+            assertEquals(listOf("1", "2"), more.articles.map { it.id.value })
+            assertEquals("a card should not vanish because a page arrived", weather(), more.weather)
+        }
+    }
+
+    @Test
     fun `weather that will not load does not take the feed with it`() = runTest {
         val feed = FeedViewModel(
             FakeArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
