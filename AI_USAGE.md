@@ -181,3 +181,21 @@ Windows 工作樹是 CRLF 無害。它看的是工作樹而不是 index。
 
 第 1 項是我自己完全沒想到的：**`hiltViewModel()` 在 `NavDisplay` 裡預設落在 Activity scope**。
 單元測試看不到它，因為它根本不是 ViewModel 的邏輯問題，是接線問題。
+
+### freshness 與異質 feed——過夜自動作業的一段
+
+這兩個行為（`51ec060`、`126ae03`）是在人睡著時做的，流程與前面相同：
+測試先紅、單獨 commit、實作到綠、`./gradlew build detekt lint` 全綠才提交。
+**與規則不符的地方仍然是第 7 步**：第二個模型的審查排在合併之後，
+因為沒有人可以在中間把關。這是同一個缺口第二次發生，記在這裡而不是解釋掉。
+
+gate 在這兩輪抓到三件事，都是我自己沒看到的：
+
+| gate | 抓到什麼 | 處置 |
+|---|---|---|
+| lint | `:core:data` 用了 `ConnectivityManager` 卻沒宣告 `ACCESS_NETWORK_STATE`——app 有宣告，但**用它的模組**沒有 | 在 `:core:data` 自己的 manifest 補上。權限該跟著提問的模組走 |
+| detekt | `FeedScreen.kt` 到了 11 個函式，超過門檻 | 把天氣卡拆成 `WeatherCard.kt`。**這是對的抱怨**：它本來就是另一種東西 |
+| detekt | `FileArticleCache` 吞掉了讀檔失敗的例外 | 把原因留在 `lastProblem`。快取讀不動不影響讀者，但「每次啟動都白付一次請求」值得被查得到 |
+
+第一項特別值得記：**`:app` 宣告了權限，所以功能會動**——lint 抓的是
+「這個模組單獨拿去用會壞」，那是模組化真正的成本，不是形式主義。
