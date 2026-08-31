@@ -17,6 +17,12 @@ internal data class CachedArticles(
     val articles: List<ArticleItem>,
     val next: PageCursor?,
     val fetchedAt: Instant,
+    /**
+     * How many rows the page lost. Kept because a page of nothing but unusable
+     * rows is an error, and one written down without this reads back as a page
+     * with nothing in it -- which is a different screen and a lie.
+     */
+    val dropped: Int = 0,
 )
 
 internal interface ArticleCache {
@@ -59,6 +65,7 @@ internal class CachingArticles(
                         articles = fresh.articles,
                         next = fresh.next,
                         fetchedAt = clock.now(),
+                        dropped = fresh.dropped,
                     ),
                 )
                 fresh
@@ -70,5 +77,6 @@ internal class CachingArticles(
 
     override suspend fun article(id: ArticleId): ArticleResult = network.article(id)
 
-    private fun CachedArticles.asResult() = ArticlesResult.Loaded(articles = articles, next = next)
+    private fun CachedArticles.asResult() =
+        ArticlesResult.Loaded(articles = articles, next = next, dropped = dropped)
 }

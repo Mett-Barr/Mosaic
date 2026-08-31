@@ -121,7 +121,14 @@ class FeedViewModel @Inject constructor(
 
             all.isEmpty() -> FeedUiState.Empty
 
-            else -> FeedUiState.Content(articles = all, canLoadMore = result.next != null)
+            // Every path that builds a Content carries the weather. Forgetting it
+            // on one of them makes the card depend on which request answered
+            // first, which is not something a reader should be able to notice.
+            else -> FeedUiState.Content(
+                articles = all,
+                canLoadMore = result.next != null,
+                weather = sky,
+            )
         }
     }
 

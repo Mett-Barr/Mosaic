@@ -52,6 +52,33 @@ class FileArticleCacheTest {
     }
 
     @Test
+    fun `a cache that is json but nonsense reads as nothing rather than as a crash`() = runTest {
+        val file = folder.newFile("feed.json")
+        // Valid JSON, valid shape, values the domain refuses: a blank id and a
+        // timestamp that is not one. Parsing succeeded, so the serialization
+        // catch never sees it.
+        file.writeText(
+            """
+            {"articles": [{"id": "", "title": "t", "summary": "", "source": "s",
+              "url": "u", "published_at": "not a time"}],
+             "next": null, "fetched_at": "2026-09-01T12:00:00Z"}
+            """.trimIndent(),
+        )
+
+        assertNull(cache(file).read())
+    }
+
+    @Test
+    fun `how many rows the page lost is remembered too`() = runTest {
+        val file = folder.newFile("feed.json")
+        val fetchedAt = Instant.parse("2026-09-01T12:00:00Z")
+
+        cache(file).write(CachedArticles(listOf(article(1)), null, fetchedAt, dropped = 2))
+
+        assertEquals(2, cache(file).read()?.dropped)
+    }
+
+    @Test
     fun `the last page written is the one that is read`() = runTest {
         val file = folder.newFile("feed.json")
         val cache = cache(file)

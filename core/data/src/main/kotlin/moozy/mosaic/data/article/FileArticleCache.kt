@@ -49,6 +49,15 @@ internal class FileArticleCache(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString(StoredPage.serializer(), it) }
                 ?.toCached()
+        } catch (refused: IllegalArgumentException) {
+            // Valid JSON whose values the domain will not hold: a blank id, a
+            // timestamp that is not one. Parsing succeeded, so the catch below
+            // never sees it, and a cache nobody can read is one request to
+            // replace. (SerializationException is one of these, so it comes
+            // first below only because it says something more specific.)
+            lastProblem = "the cached page held values this app cannot use: ${refused.message}"
+            file.delete()
+            null
         } catch (unreadable: SerializationException) {
             lastProblem = "the cached page could not be read: ${unreadable.message}"
             file.delete()
@@ -59,10 +68,19 @@ internal class FileArticleCache(
         }
     }
 
+    /**
+     * Best effort on purpose. A page that was fetched successfully must reach the
+     * reader whether or not it can also be written down; a full disk is not a
+     * reason to fail a request that already worked.
+     */
     override suspend fun write(articles: CachedArticles) {
         withContext(io) {
-            file.parentFile?.mkdirs()
-            file.writeText(json.encodeToString(StoredPage.serializer(), articles.stored()))
+            try {
+                file.parentFile?.mkdirs()
+                file.writeText(json.encodeToString(StoredPage.serializer(), articles.stored()))
+            } catch (unwritable: IOException) {
+                lastProblem = "the page could not be written down: ${unwritable.message}"
+            }
         }
     }
 }
@@ -72,6 +90,7 @@ private data class StoredPage(
     val articles: List<StoredCachedArticle>,
     val next: String? = null,
     @SerialName("fetched_at") val fetchedAt: String,
+    val dropped: Int = 0,
 )
 
 @Serializable
@@ -89,6 +108,7 @@ private fun CachedArticles.stored() = StoredPage(
     articles = articles.map { it.stored() },
     next = next?.value,
     fetchedAt = fetchedAt.toString(),
+    dropped = dropped,
 )
 
 private fun ArticleItem.stored() = StoredCachedArticle(
@@ -105,6 +125,7 @@ private fun StoredPage.toCached() = CachedArticles(
     articles = articles.map { it.toArticle() },
     next = next?.let(::PageCursor),
     fetchedAt = Instant.parse(fetchedAt),
+    dropped = dropped,
 )
 
 private fun StoredCachedArticle.toArticle() = ArticleItem(
