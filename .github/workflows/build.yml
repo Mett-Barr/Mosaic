@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+
+      # This is the gate AGENTS.md describes. Running it here, and not only in a
+      # local convention, is what makes it enforced rather than advisory.
+      # `build` compiles every variant and runs every check task — assembling only
+      # debug would hide release-specific problems until packaging time.
+      - name: Build all variants and run all checks
+        run: ./gradlew build
+
+      - name: Run static analysis
+        run: ./gradlew detekt lint
+
+      # Instrumented tests need a device, which CI does not have. Compiling them
+      # at least stops them from rotting silently as the UI changes.
+      - name: Compile instrumented tests
+        run: ./gradlew compileDebugAndroidTestKotlin
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            **/build/reports/
+            **/build/test-results/
+          retention-days: 7
