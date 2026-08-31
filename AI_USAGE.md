@@ -104,3 +104,25 @@ Windows 工作樹是 CRLF 無害。它看的是工作樹而不是 index。
 
 第 7 項值得單獨記：**我寫錯的前提被它抓出來並附了出處**。審查的價值不只在它挑我的程式碼，
 也在它拒絕接受我在任務書裡塞給它的錯誤假設。
+
+### 網路層——第二個模型的獨立審查
+
+| # | 它說的 | 處置 |
+|---|---|---|
+| 1 | 只回傳 `hasMore`，把伺服器給的 `next` 連結丟掉，等於逼呼叫端自己算 offset——清單一變動就會重複或漏項 | **採納。**它自己選的「只能改一件事」。改成沿用伺服器的連結，並加測試證明第二次請求打的是伺服器給的那一個 |
+| 2 | Ktor 的例外直接穿過資料層，UI 無法區分 error 與 offline | **採納但延後到 repository。**理由與替代方案寫進 `DECISIONS.md` 8：`Result` 的失敗仍然只是 `Throwable`，換位置不算解決 |
+| 3 | 沒有 timeout，請求可能讓 UI 永遠停在 loading | **採納。**request／connect／socket 三個都設。它同時指出**retry 不能盲加**（會增加行動網路消耗）——這一點我同意，目前不做自動重試 |
+| 4 | 測試可被假實作蒙混：`hasMore` 只驗 true／false、壞列只驗數量 | **採納。**改成斷言伺服器給的連結本身、後續請求的 query、存活文章的 id 與 title、被丟原因的內容 |
+| 5 | 500 的測試只驗了例外類別，沒驗 status | **採納。**補上 `assertEquals(InternalServerError, thrown.response.status)` |
+| 6 | `README.md` 還寫著「尚未實作任何功能」，與現況不符，評審一眼看得到 | **採納。**獨立一個 `docs:` commit 修正 |
+| 7 | base URL 寫死在 companion object | **不採納（現在）。**單一公開 endpoint，注入設定現在只會增加樣板。記進 `.open-questions.md` |
+| 8 | `HttpClient` 每次呼叫都新建、測試也沒 close | **接受但延後。**它的歸屬要等 Hilt 進場才有地方定義 |
+
+第 1 項與上一輪的第 1 項是同一種錯誤：**我寫了一個「在靜止的清單上會通過」的實作**。
+這兩次都不是程式碼寫錯，是我對世界的假設寫錯——而測試是照著同一個假設寫的，
+所以它們也不會抓到。
+
+另外一件值得記的：detekt 抓到我的 `catch (malformed: URLParserException) { return false }`
+是 swallowed exception。改成不需要例外的前綴比對之後反而更嚴格——
+它連 `api.spaceflightnewsapi.net.example.com` 這種相似 host 都擋得掉，而原本的 host 比對擋不掉。
+**這一次是 lint 讓程式碼變好，不是讓它變醜。**
