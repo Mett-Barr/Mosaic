@@ -4,6 +4,7 @@ import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.ResponseException
+import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.ContentConvertException
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -81,7 +82,7 @@ internal class NetworkArticleRepository(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (server: ResponseException) {
-            Answer.No(FeedFailure.Server(server.response.status.value, server.message))
+            Answer.No(server.asFailure())
         } catch (unreadable: ContentConvertException) {
             Answer.No(FeedFailure.Unreadable(unreadable.message))
         } catch (unreadable: NoTransformationFoundException) {
@@ -98,6 +99,17 @@ internal class NetworkArticleRepository(
         data class Yes<T>(val value: T) : Answer<T>
         data class No(val reason: FeedFailure) : Answer<Nothing>
     }
+
+    /**
+     * A 404 is not an error the reader can wait out; it is the answer. Everything
+     * else keeps its status, because there is nothing more specific to say.
+     */
+    private fun ResponseException.asFailure(): FeedFailure =
+        if (response.status == HttpStatusCode.NotFound) {
+            FeedFailure.Missing(message)
+        } else {
+            FeedFailure.Server(response.status.value, message)
+        }
 
     /**
      * Everything that goes wrong on the wire arrives as an [IOException]; the

@@ -135,25 +135,22 @@ private fun Centred(modifier: Modifier = Modifier, content: @Composable () -> Un
 }
 
 private fun FeedFailure.headline(): String = when (this) {
-    is FeedFailure.Server -> if (status == NOT_FOUND) "This article is gone." else "Something went wrong."
+    is FeedFailure.Missing -> "This article is gone."
     is FeedFailure.Offline -> "You appear to be offline."
     else -> "Something went wrong."
 }
 
 private fun FeedFailure.hint(): String = when (this) {
+    is FeedFailure.Missing -> "It is no longer where the feed said it was."
     is FeedFailure.Offline -> "The article will open when the connection is back."
     is FeedFailure.Timeout -> "The article took too long to arrive."
-    is FeedFailure.Server ->
-        if (status == NOT_FOUND) "It is no longer where the feed said it was." else "Error $status."
+    is FeedFailure.Server -> "The feed is having trouble."
     is FeedFailure.Unreadable -> "What arrived was not something this app can read."
     is FeedFailure.Unexpected -> "Something unexpected happened."
 }
 
-/** A 404 will be a 404 next time too; everything else might not be. */
-private fun FeedFailure.worthTryingAgain(): Boolean =
-    !(this is FeedFailure.Server && status == NOT_FOUND)
+/** An article that is gone will be gone next time too; everything else might not be. */
+private fun FeedFailure.worthTryingAgain(): Boolean = this !is FeedFailure.Missing
 
 private val readableTime: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM, HH:mm").withZone(ZoneId.systemDefault())
-
-private const val NOT_FOUND = 404
