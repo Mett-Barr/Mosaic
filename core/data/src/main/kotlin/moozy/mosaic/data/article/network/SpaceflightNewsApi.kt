@@ -61,10 +61,14 @@ internal fun spaceflightNewsClient(engine: HttpClientEngine): HttpClient = HttpC
 internal class SpaceflightNewsApi(private val client: HttpClient) {
 
     suspend fun articles(limit: Int, after: String? = null): ArticlePage {
-        val page: ArticlePageDto = client.get(after ?: ARTICLES_URL) {
+        // A cursor handed in gets the same look as one handed back: it may have
+        // come from a cache, a saved state or a caller's mistake, and only the
+        // response it came from is any reason to trust it.
+        val target = after?.takeIf { it.continuesTheArticleList() }
+        val page: ArticlePageDto = client.get(target ?: ARTICLES_URL) {
             // The server's link already carries the window it means; adding our
             // own parameters to it would be second-guessing it.
-            if (after == null) parameter("limit", limit)
+            if (target == null) parameter("limit", limit)
         }.body()
         val mapped = page.toArticles()
         return ArticlePage(

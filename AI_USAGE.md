@@ -126,3 +126,20 @@ Windows 工作樹是 CRLF 無害。它看的是工作樹而不是 index。
 是 swallowed exception。改成不需要例外的前綴比對之後反而更嚴格——
 它連 `api.spaceflightnewsapi.net.example.com` 這種相似 host 都擋得掉，而原本的 host 比對擋不掉。
 **這一次是 lint 讓程式碼變好，不是讓它變醜。**
+
+### repository——第二個模型的獨立審查
+
+| # | 它說的 | 處置 |
+|---|---|---|
+| 1 | repository 把 mapper 帶回來的 `droppedReasons` 丟掉了：整頁壞掉會變成合法的空清單 | **採納。**`Loaded` 帶上 `dropped` 計數，並補一個「整頁都壞掉」的測試 |
+| 2 | 沒預期到的例外會穿過 repository——「失敗在這裡停止被丟出」這句話有例外 | **採納。**加 `FeedFailure.Unexpected`，catch `Exception` 但先重新丟出 `CancellationException`；detekt 的兩條規則就地 suppress 並寫明理由 |
+| 3 | 呼叫端可以自己造一個任意 `PageCursor`，repository 會原樣拿去打 | **採納。**傳進來的游標和回應裡的 `next` 走同一道檢查 |
+| 4 | `Server(status)` 把 4xx 與 5xx 混在一起，429 的 `Retry-After` 也丟了 | **不採納（現在）。**目前四種狀態都對應同一個錯誤畫面；要分是在做重試政策的時候，那時才有行為需要它 |
+| 5 | `IOException → Offline` 太寬（TLS、DNS、`ConnectException` 都不等於離線） | **不採納（現在）。**記進 `.open-questions.md`；改名或細分需要 UI 有對應的不同呈現才有意義 |
+| 6 | `ArticleRepository` 只有一個 `suspend` 方法，撐不起「離線優先、快取先出」 | **接受它是對的，但順序上還沒到。**它自己也說目前的無狀態設計是較好的選擇；等快取進場時這個介面會改成 `Flow` |
+| 7 | 用 MockEngine 丟 `java.net.SocketTimeoutException` 不等於真實的 OkHttp 逾時 | **接受這個限制。**它證明的是「這個例外到了 repository 會被判成 Timeout」，不是「OkHttp 會丟這個例外」。記進 `.open-questions.md` |
+| 8 | **停止繼續堆資料層，先接一條垂直切片到畫面** | **採納。**這是它的「只能改一件事」。資料層到此為止，下一步是 DI 接線＋feed 畫面＋四種狀態 |
+| 9 | `DECISIONS.md` 少了第 9 則、README 說「沒有 repository」已過期 | **採納。**同一個 commit 補上 |
+
+第 8 項是這一輪最有價值的：**我問了它「現在該不該停下來」，它說該**。
+一個沒有畫面的 take-home 不管資料層多乾淨，評審看到的都是一個空 app。
