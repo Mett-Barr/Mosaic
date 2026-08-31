@@ -51,3 +51,51 @@ Gradle 設定就成立了。剩下的部分由第 2 則的檢查把關；只講�
 **驗證過它會失敗** —— 暫時讓 `:feature:feed` 相依 `:core:data`，檢查如預期報出
 `:feature:feed must not depend on :core:data`，然後還原。**沒看過失敗的檢查不算檢查**，
 這一點對 gate 與對測試是同一個標準。
+
+---
+
+## 3. 領域模型自己拒絕不合法的值，壞資料在邊界被丟掉
+
+**選了** —— `ArticleId` 與 `ArticleItem` 在 `init` 用 `require` 守不變條件，違反就丟
+`IllegalArgumentException`。相對的責任落在 `:core:data` 的 mapper：它逐筆決定一份回應
+能不能變成領域物件，不能的那一筆丟掉，不讓它炸掉整頁。
+
+**當時還考慮**
+
+- **工廠回傳 `Result<ArticleItem>`。** 呼叫端被型別逼著處理失敗。代價是每個建立點都分岔成
+  兩條路徑，而呼叫端仍然可以 `getOrThrow()` 把保證丟回去。
+- **完全不驗，欄位放寬成 nullable。** 成本零，代價是每個畫面各自判斷「這個標題算不算空」，
+  而且判斷會不一致。
+- **在 UI 層擋。** 最晚的一道防線，等於承認領域物件不可信。
+
+**取捨** —— `require` 讓「不合法的 `ArticleItem` 不存在」變成型別層級的事實，下游不必重複
+檢查。代價是**這個保證只在邊界真的過濾時才成立**：mapper 若把 DTO 直接送進建構子而不處理
+例外，一筆壞資料就會炸掉整頁。編譯器不會提醒這件事，所以它由 mapper 那個 commit 的測試
+來守——一筆壞的、一筆好的，斷言只有壞的被丟掉。
+
+## 4. 時間用 `java.time.Instant`
+
+**選了** —— 領域模型的時間欄位是 `java.time.Instant`。minSdk 24 而 `java.time` 要到
+API 26，所以各 Android 模組開 core library desugaring。
+
+**當時還考慮**
+
+- **直接放 API 給的字串。** 顯示時不必轉換，但 freshness 是對時間做算術，字串做不了；
+  而且「怎麼讀給人看」是 UI 的決定，放進模型等於提早決定它。
+- **`kotlin.time.Instant`（Kotlin 2.3 已提供）或 `kotlinx-datetime`。** 有跨平台需求時
+  會是首選。這個專案只有 Android，多一層互通成本（Ktor、持久化、Compose 各自要轉）。
+
+**取捨** —— 要多開 desugaring（已開）。另外 `java.time.Instant` 對 Compose 是外部型別、
+推導不出 stable，直接當 composable 參數會讓它無法 skip；那要把型別列進
+`compose_compiler_config.conf`。等它真的進到 UI 再做，現在寫下來免得那天忘了為什麼。
+
+## 5. `ArticleId` 包的是 `String`，儘管 API 給的是整數
+
+**選了** —— `@JvmInline value class ArticleId(String)`。
+
+**當時還考慮** —— 裸 `Int`／`Long`（貼近來源的實際型別）、裸 `String`（少一個型別）。
+
+**取捨** —— 異質 feed 進來之後，天氣與電影的 id 不是整數；統一成 String，saved 的 key
+才只有一種形狀。代價有兩個：mapper 要 `toString()`，而且**不同來源的 `42` 會撞**。
+真正跨來源的 key 需要帶 source namespace，但設計那個型別需要的資訊要等異質內容進場才有。
+在那之前，`ArticleId` 只代表「文章這個來源裡的 id」。
