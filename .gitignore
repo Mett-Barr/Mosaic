@@ -37,3 +37,6 @@ keystore.properties
 .codex-task.md
 .codex-run.log
 .codex-review.md
+
+# 過夜自動作業留給人審的清單（本機工作筆記，不是專案文件）
+.open-questions.md
