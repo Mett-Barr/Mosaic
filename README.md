@@ -105,3 +105,10 @@ labelled `build`/`ci`/`docs` rather than `feat`: they change nothing observable.
 ### What was deliberately deferred
 
 To be filled in as it happens, rather than reconstructed at the end.
+
+## How this was built
+
+`AGENTS.md` describes the development loop and the human/AI split this project runs on.
+[`DECISIONS.md`](DECISIONS.md) records the choices a reviewer would question.
+[`AI_USAGE.md`](AI_USAGE.md) records what the agent produced and what was rejected.
+[`docs/git-conventions.md`](docs/git-conventions.md) covers commits and branches.
