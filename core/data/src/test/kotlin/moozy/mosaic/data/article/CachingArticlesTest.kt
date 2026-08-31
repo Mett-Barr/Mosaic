@@ -104,6 +104,22 @@ class CachingArticlesTest {
     }
 
     @Test
+    fun `a page whose rows were all unreadable does not come back as an empty one`() = runTest {
+        val cache = FakeCache()
+        val network = CountingArticles(ArticlesResult.Loaded(emptyList(), next = null, dropped = 3))
+
+        caching(network, cache).articles(after = null)
+        now = noon.plusSeconds(60)
+        val second = caching(CountingArticles(), cache).articles(after = null)
+
+        assertEquals(
+            "an unreadable page read back as empty is a lie the cache invented",
+            3,
+            (second as ArticlesResult.Loaded).dropped,
+        )
+    }
+
+    @Test
     fun `pages after the first are never served from the cache`() = runTest {
         val network = CountingArticles(
             ArticlesResult.Loaded(listOf(article(2)), next = null),
