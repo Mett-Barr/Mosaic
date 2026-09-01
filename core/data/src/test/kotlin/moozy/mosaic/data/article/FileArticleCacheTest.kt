@@ -26,6 +26,29 @@ class FileArticleCacheTest {
     private fun cache(file: File) = FileArticleCache(file, UnconfinedTestDispatcher())
 
     @Test
+    fun `a time that is not a time reads as nothing rather than as a throw`() = runTest {
+        val file = folder.newFile("feed.json")
+        file.writeText(
+            """{"articles":[{"id":"1","title":"T","summary":"S","source":"NASA",
+               "url":"https://example.test/1","published_at":"once upon a time"}],
+               "fetched_at":"2026-09-01T12:00:00Z"}"""
+                .trimIndent(),
+        )
+
+        assertNull(cache(file).read())
+    }
+
+    @Test
+    fun `an unreadable moment of fetching reads as nothing too`() = runTest {
+        val file = folder.newFile("feed.json")
+        file.writeText(
+            """{"articles":[],"fetched_at":"recently"}"""
+        )
+
+        assertNull(cache(file).read())
+    }
+
+    @Test
     fun `a page written down is there for the next run`() = runTest {
         val file = folder.newFile("feed.json")
         val fetchedAt = Instant.parse("2026-09-01T12:00:00Z")
