@@ -109,6 +109,35 @@ class DetailViewModelTest {
     }
 
     @Test
+    fun `keeping after an article failed to open does not keep the one before it`() = runTest {
+        val kept = FakeSaved()
+        val answers = ArrayDeque(
+            listOf(
+                ArticleResult.Loaded(article(id = "1", title = "The one they read")),
+                ArticleResult.Failed(FeedFailure.Offline()),
+            ),
+        )
+        val detail = DetailViewModel(
+            object : ArticleRepository {
+                override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult = notAsked()
+                override suspend fun article(id: ArticleId): ArticleResult {
+                    yield()
+                    return answers.removeFirst()
+                }
+            },
+            kept,
+        )
+
+        detail.open(ArticleId("1"))
+        detail.open(ArticleId("2"))
+        detail.keep()
+
+        // Nothing is on the screen to keep. The article held from the request
+        // before is not an answer to "keep this one".
+        assertEquals(emptyList<ArticleItem>(), kept.articles.value)
+    }
+
+    @Test
     fun `the article arrives whole`() = runTest {
         val detail = detailOf(ArticleResult.Loaded(article()))
 
