@@ -34,6 +34,25 @@ class CachingArticlesTest {
         )
 
     @Test
+    fun `every ask for the first page goes to the network`() = runTest {
+        val network = CountingArticles(
+            ArticlesResult.Loaded(listOf(article(1)), next = null),
+            ArticlesResult.Loaded(listOf(article(2)), next = null),
+        )
+        val caching = caching(network)
+
+        caching.articles(after = null)
+        now = noon.plusSeconds(60)
+        val second = caching.articles(after = null)
+
+        // There is no window any more. The only two things that ask for a first
+        // page are the app starting and the reader pulling the list down, and
+        // both of those are somebody asking to see the feed.
+        assertEquals("nobody asks for the top of the list by accident", 2, network.calls)
+        assertEquals(listOf("2"), (second as ArticlesResult.Loaded).articles.map { it.id.value })
+    }
+
+    @Test
     fun `a page fetched a moment ago is served without asking again`() = runTest {
         val network = CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null))
         val caching = caching(network)
