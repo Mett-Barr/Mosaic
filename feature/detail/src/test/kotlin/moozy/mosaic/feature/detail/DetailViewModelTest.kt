@@ -2,6 +2,7 @@ package moozy.mosaic.feature.detail
 
 import app.cash.turbine.test
 import java.time.Instant
+import java.util.TimeZone
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,6 +23,7 @@ import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,11 +39,53 @@ class DetailViewModelTest {
 
     private val dispatcher = UnconfinedTestDispatcher()
 
+    private lateinit var deviceZone: TimeZone
+
     @Before
-    fun useTestDispatcher() = Dispatchers.setMain(dispatcher)
+    fun useTestDispatcher() {
+        Dispatchers.setMain(dispatcher)
+        deviceZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Taipei"))
+    }
 
     @After
-    fun releaseDispatcher() = Dispatchers.resetMain()
+    fun releaseDispatcher() {
+        TimeZone.setDefault(deviceZone)
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `an article reaches the screen as words, not as a domain object`() = runTest {
+        val detail = detailOf(ArticleResult.Loaded(article()))
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+
+            val shown = (awaitItem() as DetailUiState.Content).article
+            assertEquals("Roman Commissioning", shown.title)
+            assertEquals("NASA \u00b7 31 Aug, 20:16", shown.attribution)
+            // The button names where it is going, so the name is part of
+            // what the screen is handed rather than something it assembles.
+            assertEquals("Read the full article at NASA", shown.readFullLabel)
+            assertEquals("https://science.nasa.gov/roman/", shown.url)
+        }
+    }
+
+    @Test
+    fun `an article that is gone says so, and does not offer another go`() = runTest {
+        val detail = detailOf(ArticleResult.Failed(FeedFailure.Missing()))
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            awaitItem()
+
+            val failed = awaitItem() as DetailUiState.Failed
+            assertEquals("This article is gone.", failed.message)
+            assertEquals("It is no longer where the feed said it was.", failed.hint)
+            assertFalse("a dead end is not worth another go", failed.canRetry)
+        }
+    }
 
     @Test
     fun `it says it is loading until the article arrives`() = runTest {
@@ -73,7 +117,7 @@ class DetailViewModelTest {
             awaitItem()
 
             val shown = (awaitItem() as DetailUiState.Content).article
-            assertEquals(article(), shown)
+            assertEquals(article().view(), shown)
         }
     }
 
@@ -85,12 +129,18 @@ class DetailViewModelTest {
         missing.state.test {
             missing.open(ArticleId("1"))
             awaitItem()
-            assertEquals(FeedFailure.Server(404), (awaitItem() as DetailUiState.Failed).reason)
+            assertEquals(
+                "The feed is having trouble.",
+                (awaitItem() as DetailUiState.Failed).hint,
+            )
         }
         offline.state.test {
             offline.open(ArticleId("1"))
             awaitItem()
-            assertTrue((awaitItem() as DetailUiState.Failed).reason is FeedFailure.Offline)
+            assertEquals(
+                "The article will open when the connection is back.",
+                (awaitItem() as DetailUiState.Failed).hint,
+            )
         }
     }
 
@@ -205,7 +255,7 @@ class DetailViewModelTest {
 
             val state = awaitItem()
             assertTrue("the kept copy should have been enough, got $state", state is DetailUiState.Content)
-            assertEquals(article(), (state as DetailUiState.Content).article)
+            assertEquals(article().view(), (state as DetailUiState.Content).article)
             assertTrue("and it is still marked as kept", state.saved)
         }
     }

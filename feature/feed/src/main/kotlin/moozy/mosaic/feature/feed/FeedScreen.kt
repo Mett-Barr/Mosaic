@@ -32,10 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import moozy.mosaic.core.ui.readableTime
 import moozy.mosaic.domain.model.ArticleId
-import moozy.mosaic.domain.model.ArticleItem
-import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.Weather
 
 @Composable
@@ -105,11 +102,7 @@ private fun FeedContent(
         }
 
         is FeedUiState.Error -> Centred(modifier) {
-            Retryable(
-                message = "Something went wrong.",
-                hint = state.reason.readAsHint(),
-                onRetry = onRetry,
-            )
+            Retryable(message = state.message, hint = state.hint, onRetry = onRetry)
         }
 
         is FeedUiState.Content -> ArticleList(state, onLoadMore, onOpenArticle, modifier)
@@ -155,11 +148,7 @@ private fun ArticleList(
 
         state.moreFailed?.let { failure ->
             item {
-                Retryable(
-                    message = "Could not load more.",
-                    hint = failure.readAsHint(),
-                    onRetry = onLoadMore,
-                )
+                Retryable(message = "Could not load more.", hint = failure, onRetry = onLoadMore)
             }
         }
 
@@ -176,7 +165,7 @@ private fun ArticleList(
 }
 
 @Composable
-private fun ArticleCard(article: ArticleItem, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun ArticleCard(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Card(onClick = onOpen, modifier = modifier.fillMaxWidth()) {
         article.imageUrl?.let { url ->
             AsyncImage(
@@ -194,7 +183,7 @@ private fun ArticleCard(article: ArticleItem, onOpen: () -> Unit, modifier: Modi
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${article.source} · ${article.publishedAt.readable()}",
+                text = article.attribution,
                 style = MaterialTheme.typography.labelMedium,
             )
             if (article.summary.isNotBlank()) {
@@ -248,20 +237,6 @@ private fun Retryable(message: String, hint: String, onRetry: () -> Unit) {
     }
 }
 
-/**
- * What to tell a reader. The failure's own detail is deliberately not shown: it is
- * an exception message, written for whoever is debugging this.
- */
-private fun FeedFailure.readAsHint(): String = when (this) {
-    is FeedFailure.Offline -> "There is no connection right now."
-    is FeedFailure.Timeout -> "The feed took too long to answer."
-    is FeedFailure.Missing -> "The feed is not where it used to be."
-    is FeedFailure.Server -> "The feed is having trouble (error $status)."
-    is FeedFailure.Unreadable -> "The feed sent something this app could not read."
-    is FeedFailure.Unexpected -> "Something unexpected happened."
-}
 
-
-private fun java.time.Instant.readable(): String = readableTime(this)
 
 private const val ITEMS_BEFORE_THE_END = 3

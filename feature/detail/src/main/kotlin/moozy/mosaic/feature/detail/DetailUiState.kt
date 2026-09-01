@@ -1,8 +1,6 @@
 package moozy.mosaic.feature.detail
 
 import androidx.compose.runtime.Immutable
-import moozy.mosaic.domain.model.ArticleItem
-import moozy.mosaic.domain.model.FeedFailure
 
 /**
  * Everything the article screen can be showing.
@@ -21,7 +19,15 @@ sealed interface DetailUiState {
      * than being asked for separately so that the button and the article cannot
      * disagree about which article they are describing.
      */
-    data class Content(val article: ArticleItem, val saved: Boolean = false) : DetailUiState
+    data class Content(val article: ArticleView, val saved: Boolean = false) : DetailUiState
 
-    data class Failed(val reason: FeedFailure) : DetailUiState
+    /**
+     * [canRetry] is false for an article that is gone: it will be gone next
+     * time too, and a button that cannot work is worse than no button.
+     */
+    data class Failed(
+        val message: String,
+        val hint: String,
+        val canRetry: Boolean,
+    ) : DetailUiState
 }

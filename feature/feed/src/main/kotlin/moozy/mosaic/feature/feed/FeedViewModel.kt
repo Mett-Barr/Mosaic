@@ -9,11 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
-import moozy.mosaic.domain.model.Weather
 import moozy.mosaic.domain.model.WeatherResult
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.WeatherRepository
@@ -36,7 +34,7 @@ class FeedViewModel @Inject constructor(
 
     private var next: PageCursor? = null
     private var loading = false
-    private var sky: Weather? = null
+    private var sky: WeatherHeadline? = null
 
     init {
         load(from = null)
@@ -46,10 +44,11 @@ class FeedViewModel @Inject constructor(
         viewModelScope.launch {
             when (val reading = weather.current()) {
                 is WeatherResult.Loaded -> {
-                    sky = reading.weather
+                    val headline = reading.weather.headline()
+                    sky = headline
                     val showing = _state.value
                     if (showing is FeedUiState.Content) {
-                        _state.value = showing.copy(weather = reading.weather)
+                        _state.value = showing.copy(weather = headline)
                     }
                 }
 
@@ -105,7 +104,7 @@ class FeedViewModel @Inject constructor(
     }
 
     /** A refresh replaces what is on screen; a next page adds to it. */
-    private fun kept(before: FeedUiState, from: PageCursor?): List<ArticleItem> =
+    private fun kept(before: FeedUiState, from: PageCursor?): List<ArticleRow> =
         if (from != null && before is FeedUiState.Content) before.articles else emptyList()
 
     /**
@@ -124,7 +123,9 @@ class FeedViewModel @Inject constructor(
         // offset from an older version of the list can repeat what the reader is
         // looking at, and the list is keyed by id -- Compose throws on a repeat
         // rather than drawing one of them.
-        val all = (keeping + result.articles).distinctBy { it.id }.toImmutableList()
+        val all = (keeping + result.articles.map { it.row() })
+            .distinctBy { it.id }
+            .toImmutableList()
         val nothingUsable = result.articles.isEmpty() && result.dropped > 0
         return when {
             nothingUsable && keeping.isNotEmpty() -> FeedUiState.Content(
@@ -134,7 +135,7 @@ class FeedViewModel @Inject constructor(
                 weather = sky,
             )
 
-            nothingUsable -> FeedUiState.Error(unreadable(result.dropped))
+            nothingUsable -> FeedUiState.Error(SOMETHING_WENT_WRONG, unreadable(result.dropped))
 
             all.isEmpty() -> FeedUiState.Empty
 
@@ -150,7 +151,7 @@ class FeedViewModel @Inject constructor(
     }
 
     private fun unreadable(dropped: Int) =
-        FeedFailure.Unreadable("$dropped rows arrived in a shape this app could not use")
+        FeedFailure.Unreadable("$dropped rows arrived in a shape this app could not use").hint()
 
     /**
      * A page that failed while there is already something to read is a note on the
@@ -159,10 +160,12 @@ class FeedViewModel @Inject constructor(
     private fun failed(reason: FeedFailure, before: FeedUiState, from: PageCursor?): FeedUiState =
         when {
             from != null && before is FeedUiState.Content ->
-                before.copy(loadingMore = false, moreFailed = reason)
+                before.copy(loadingMore = false, moreFailed = reason.hint())
 
             reason is FeedFailure.Offline -> FeedUiState.Offline
 
-            else -> FeedUiState.Error(reason)
+            else -> FeedUiState.Error(SOMETHING_WENT_WRONG, reason.hint())
         }
 }
+
+private const val SOMETHING_WENT_WRONG = "Something went wrong."

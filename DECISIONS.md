@@ -488,3 +488,34 @@ Views 至少還能用 JVM 測 presenter 對 view 介面的呼叫。這就是為�
 **取捨** —— 畫面消失時請求一定被取消，包括那些「反正快好了」的。
 代價是讀者切出去再切回來可能要重抓一次；換到的是沒有任何工作能活得比它的畫面久。
 
+## 22. 三層：DTO → domain model → UI state
+
+**選了** —— 資料在到達畫面之前經過三種形狀，每一種只回答一個問題：
+
+| 層 | 型別 | 回答什麼 | 住在哪 |
+|---|---|---|---|
+| **DTO** | `ArticleDto`、`ArticlePageDto`、`ForecastDto`（網路）；`StoredArticle`、`StoredPage`、`StoredWeather`（磁碟） | 對方的格式長什麼樣 | `:core:data`，全部 `private`／`internal` |
+| **Domain model** | `ArticleItem`、`Weather`、`ArticlesResult`、`FeedFailure` | 這個 app 認為世界是什麼樣子 | `:core:domain`，純 Kotlin |
+| **UI state** | `FeedUiState` + `ArticleRow`／`WeatherHeadline`；`DetailUiState` + `ArticleView`；`SavedUiState` + `SavedRow` | 讀者**看到什麼字** | 各自的 feature 模組 |
+
+**原本缺的是第三層。** 狀態的**形狀**是 UI 自己的（五個型別，`DECISIONS.md` 10），
+但它**裝的**是 domain 物件：一串 `ArticleItem`、一個 `Weather`、一個 `FeedFailure`。
+於是「`NASA · 31 Aug, 21:14` 這行字怎麼組出來」、「500 該說哪一句」、
+「文章不見了要不要給重試按鈕」——全部在 composable 裡決定。
+
+**為什麼那是問題** —— 這個專案**沒有畫面測試**（Compose 要裝置或 Robolectric，
+`DECISIONS.md` 20 記了這個代價）。所以任何搬進 composable 的決定，就等於搬到了
+**沒有任何自動化檢查搆得到的地方**。實際後果：日期在中文裝置上顯示成 `31 8月, 21:14`，
+138 個測試全綠，是**跑起來用眼睛看**才發現的。
+
+現在那些決定在 ViewModel 的邊界完成，是普通的函式回傳普通的字串，ViewModel 自己的
+測試就直接斷言那些字。**測不到的東西變少了，而不是多寫了一層樣板。**
+
+**取捨**
+
+- 多三個檔案、多一次映射。對這個規模是真的成本
+- id 保留 domain 的 `ArticleId` 而不是 `String`：它不被顯示，它是點下去時交還回來的東西
+- `DetailViewModel` 因此要自己留住 `ArticleItem`（收藏要把整篇交給 store，而畫面只拿到字）
+
+**這一則是使用者決定的**，不是我。他指定要 DTO → domain → UI state 這個方向。
+

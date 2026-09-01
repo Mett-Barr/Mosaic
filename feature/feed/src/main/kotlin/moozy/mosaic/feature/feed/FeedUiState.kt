@@ -2,9 +2,6 @@ package moozy.mosaic.feature.feed
 
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
-import moozy.mosaic.domain.model.ArticleItem
-import moozy.mosaic.domain.model.FeedFailure
-import moozy.mosaic.domain.model.Weather
 
 /**
  * Everything the feed can be showing.
@@ -27,8 +24,14 @@ sealed interface FeedUiState {
     /** The request never got out. Worth offering to try again. */
     data object Offline : FeedUiState
 
-    /** It got out, and what came back was not usable. */
-    data class Error(val reason: FeedFailure) : FeedUiState
+    /**
+     * It got out, and what came back was not usable.
+     *
+     * Two sentences rather than a failure, because two sentences is what
+     * the screen draws. Which two is a decision worth a test, and a
+     * decision made inside a composable is not one this project can run.
+     */
+    data class Error(val message: String, val hint: String) : FeedUiState
 
     /**
      * Articles, and what is happening to them.
@@ -43,12 +46,12 @@ sealed interface FeedUiState {
      * someone for scrolling.
      */
     data class Content(
-        val articles: ImmutableList<ArticleItem>,
+        val articles: ImmutableList<ArticleRow>,
         val canLoadMore: Boolean,
         val loadingMore: Boolean = false,
         /** A refresh the reader asked for, running with the list still on screen. */
         val refreshing: Boolean = false,
-        val moreFailed: FeedFailure? = null,
-        val weather: Weather? = null,
+        val moreFailed: String? = null,
+        val weather: WeatherHeadline? = null,
     ) : FeedUiState
 }
