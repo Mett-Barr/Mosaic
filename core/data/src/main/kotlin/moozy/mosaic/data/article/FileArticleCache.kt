@@ -2,6 +2,7 @@ package moozy.mosaic.data.article
 
 import java.io.File
 import java.io.IOException
+import java.time.DateTimeException
 import java.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -49,17 +50,25 @@ internal class FileArticleCache(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString(StoredPage.serializer(), it) }
                 ?.toCached()
+        } catch (unreadable: SerializationException) {
+            // First, because SerializationException *is* an
+            // IllegalArgumentException: catching the general one above this would
+            // leave this branch unreachable and its message unwritten.
+            lastProblem = "the cached page could not be read: ${unreadable.message}"
+            file.delete()
+            null
         } catch (refused: IllegalArgumentException) {
-            // Valid JSON whose values the domain will not hold: a blank id, a
-            // timestamp that is not one. Parsing succeeded, so the catch below
-            // never sees it, and a cache nobody can read is one request to
-            // replace. (SerializationException is one of these, so it comes
-            // first below only because it says something more specific.)
+            // Valid JSON whose values the domain will not hold: a blank id, a day
+            // colder at its warmest than at its coldest. Parsing succeeded, so
+            // neither catch around it sees these.
             lastProblem = "the cached page held values this app cannot use: ${refused.message}"
             file.delete()
             null
-        } catch (unreadable: SerializationException) {
-            lastProblem = "the cached page could not be read: ${unreadable.message}"
+        } catch (unreadable: DateTimeException) {
+            // A stored time that will not parse. Not an IllegalArgumentException
+            // -- which is the whole reason this branch had to be written: without
+            // it the throw left read() entirely and took the caller with it.
+            lastProblem = "the cached page had a time that is not one: ${unreadable.message}"
             file.delete()
             null
         } catch (unreachable: IOException) {

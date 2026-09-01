@@ -2,6 +2,7 @@ package moozy.mosaic.data.weather
 
 import java.io.File
 import java.io.IOException
+import java.time.DateTimeException
 import java.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -43,16 +44,25 @@ internal class FileWeatherCache(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString(StoredWeather.serializer(), it) }
                 ?.toCached()
+        } catch (unreadable: SerializationException) {
+            // First, because SerializationException *is* an
+            // IllegalArgumentException: catching the general one above this would
+            // leave this branch unreachable and its message unwritten.
+            lastProblem = "the stored reading could not be read: ${unreadable.message}"
+            file.delete()
+            null
         } catch (refused: IllegalArgumentException) {
-            // Valid JSON the domain will not hold: a sky nobody has heard of, a
-            // day colder at its warmest than at its coldest. Parsing worked, so
-            // the catch below never sees these, and a cache must not be a way to
-            // smuggle past the constructor.
+            // Valid JSON whose values the domain will not hold: a blank id, a day
+            // colder at its warmest than at its coldest. Parsing succeeded, so
+            // neither catch around it sees these.
             lastProblem = "the stored reading held values this app cannot use: ${refused.message}"
             file.delete()
             null
-        } catch (unreadable: SerializationException) {
-            lastProblem = "the stored reading could not be read: ${unreadable.message}"
+        } catch (unreadable: DateTimeException) {
+            // A stored time that will not parse. Not an IllegalArgumentException
+            // -- which is the whole reason this branch had to be written: without
+            // it the throw left read() entirely and took the caller with it.
+            lastProblem = "the stored reading had a time that is not one: ${unreadable.message}"
             file.delete()
             null
         } catch (unreachable: IOException) {
