@@ -85,7 +85,6 @@ internal object DataModule {
             client = openMeteoClient(OkHttp.create()),
             place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
             clock = Clock { Instant.now() },
-            dataCost = DataCost { context.isOnMeteredConnection() },
             // cacheDir, alongside the articles, because a reading is reproducible
             // by asking again: the system may delete it when storage runs short
             // and nothing is lost but one request. filesDir would have claimed it

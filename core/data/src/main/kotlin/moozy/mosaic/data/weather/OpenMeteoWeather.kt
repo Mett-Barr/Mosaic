@@ -18,12 +18,8 @@ import java.net.SocketTimeoutException
 import java.time.Instant
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.SerializationException
-import moozy.mosaic.domain.model.Cadence
 import moozy.mosaic.domain.model.Clock
-import moozy.mosaic.domain.model.DataCost
 import moozy.mosaic.domain.model.FeedFailure
-import moozy.mosaic.domain.model.Freshness
-import moozy.mosaic.domain.model.Weather
 import moozy.mosaic.domain.model.WeatherResult
 import moozy.mosaic.domain.repository.WeatherRepository
 
@@ -47,10 +43,14 @@ internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(
 /**
  * The current weather for one place, asked for no more often than it changes.
  *
+ * When to ask again is the source's answer, not this app's: every reading
+ * carries its own stamp and the interval the source produces them on, so the
+ * next moment worth a request is the source's next step. Asking sooner cannot
+ * produce a value that does not exist yet.
+ *
  * The reading is kept by a [WeatherCache] rather than in a field, so that the
- * system reclaiming the app does not turn a reading this still considers fresh
- * into another request. How long it stays worth showing is [freshness]'s answer
- * and nothing to do with where it is kept.
+ * system reclaiming the app does not turn a reading still worth reusing into
+ * another request.
  *
  * The cache is a constructor argument rather than a decorator, which is where
  * the articles put theirs. There the cache answers a different question -- what
@@ -62,16 +62,18 @@ internal class OpenMeteoWeather(
     private val client: HttpClient,
     private val place: Place,
     private val clock: Clock,
-    private val dataCost: DataCost,
     private val cache: WeatherCache,
-    private val freshness: Freshness = Cadence.WEATHER,
 ) : WeatherRepository {
 
     private var remembered: CachedWeather? = null
 
     override suspend fun current(): WeatherResult {
         val known = remembered ?: cache.read()?.also { remembered = it }
-        if (known != null && !freshness.isStale(known.askedAt, clock.now(), dataCost.isMetered())) {
+        // No metered window. A request that returns something new is not waste,
+        // and one that returns what is already held is -- which is the class of
+        // request the source's own schedule removes. Measured: a reading costs
+        // 300 bytes on the wire and one article image costs 247 kilobytes.
+        if (known != null && clock.now() < known.askAgainAt) {
             return WeatherResult.Loaded(known.weather)
         }
         return fetch()
@@ -91,7 +93,7 @@ internal class OpenMeteoWeather(
             val weather = forecast.toWeather(place.name)
             // Only a reading is kept. A failure that was kept would stop this
             // asking again at exactly the moment it should.
-            val reading = CachedWeather(weather, clock.now())
+            val reading = CachedWeather(weather, weather.askAgainAfter(clock.now()))
             remembered = reading
             cache.write(reading)
             WeatherResult.Loaded(weather)

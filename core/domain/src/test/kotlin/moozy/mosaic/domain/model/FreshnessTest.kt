@@ -75,23 +75,18 @@ class FreshnessTest {
     }
 
     @Test
-    fun `the cadences are the numbers the README argues for`() {
+    fun `the articles' cadence is the pair the README argues for`() {
+        // Articles only. The weather had a pair here and does not any more:
+        // every Open-Meteo reading says how often the source produces a new
+        // one, so that window is the source's rather than one this app has to
+        // defend. The articles have no such signal, so their two numbers stay
+        // an argument -- and stay pinned, because an argument that can drift
+        // without a test noticing is not an argument.
         // Pinned rather than bounded. A range lets somebody change the policy to
         // something the README no longer describes and still be green, and these
         // numbers are the answer to the assignment's question -- they are not an
         // implementation detail.
         assertEquals(Duration.ofMinutes(15), Cadence.ARTICLES.staleAfter)
         assertEquals(Duration.ofHours(1), Cadence.ARTICLES.staleAfterOnMeteredData)
-        assertEquals(Duration.ofMinutes(10), Cadence.WEATHER.staleAfter)
-        assertEquals(Duration.ofMinutes(30), Cadence.WEATHER.staleAfterOnMeteredData)
-    }
-
-    @Test
-    fun `the weather goes stale sooner than the articles, on either connection`() {
-        // The assignment's own hint: weather changes by the minute, articles by
-        // the hour. If this ever stops being true, one of the two numbers was
-        // changed without the argument being revisited.
-        assertTrue(Cadence.WEATHER.staleAfter < Cadence.ARTICLES.staleAfter)
-        assertTrue(Cadence.WEATHER.staleAfterOnMeteredData < Cadence.ARTICLES.staleAfterOnMeteredData)
     }
 }

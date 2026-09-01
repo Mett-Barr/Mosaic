@@ -1,5 +1,6 @@
 package moozy.mosaic.data.weather
 
+import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.math.roundToInt
@@ -31,6 +32,8 @@ internal data class ForecastDto(
 @Serializable
 internal data class CurrentDto(
     val time: String,
+    /** Seconds between one reading and the next, as the source reports it. */
+    val interval: Int,
     @SerialName("temperature_2m") val temperature: Double,
     @SerialName("weather_code") val weatherCode: Int,
 )
@@ -56,6 +59,9 @@ internal fun ForecastDto.toWeather(place: String): Weather = Weather(
     // separately; neither is an instant until they are put together.
     measuredAt = LocalDateTime.parse(current.time)
         .toInstant(ZoneOffset.ofTotalSeconds(utcOffsetSeconds)),
+    // How often the source produces a new one, as the source reports it.
+    // This is what makes the freshness policy a fact rather than a guess.
+    stepsEvery = Duration.ofSeconds(current.interval.toLong()),
 )
 
 /**

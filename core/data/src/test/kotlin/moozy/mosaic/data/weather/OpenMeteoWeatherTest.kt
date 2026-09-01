@@ -26,14 +26,12 @@ class OpenMeteoWeatherTest {
 
     private val requests = mutableListOf<HttpRequestData>()
     private var now: Instant = Instant.parse("2026-09-01T12:00:00Z")
-    private var metered = false
     private val cache = RememberedInMemory()
 
     private fun weather(engine: MockEngine) = OpenMeteoWeather(
         client = openMeteoClient(engine),
         place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
         clock = { now },
-        dataCost = { metered },
         cache = cache,
     )
 
@@ -46,7 +44,7 @@ class OpenMeteoWeatherTest {
 
     private val forecast = """
         {"utc_offset_seconds": 28800, "timezone": "Asia/Taipei",
-         "current": {"time": "2026-09-01T20:00", "temperature_2m": 25.6, "weather_code": 3},
+         "current": {"interval": 900, "time": "2026-09-01T20:00", "temperature_2m": 25.6, "weather_code": 3},
          "daily": {"temperature_2m_max": [31.8], "temperature_2m_min": [25.4]}}
     """.trimIndent()
 
@@ -84,37 +82,41 @@ class OpenMeteoWeatherTest {
     }
 
     @Test
-    fun `a reading taken minutes ago is not asked for again`() = runTest {
+    fun `before the source has produced a new reading, nothing is asked`() = runTest {
         val weather = answering(forecast)
 
         weather.current()
-        now = now.plusSeconds(9 * 60)
+        // The reading is stamped 12:00 and the source steps every 15 minutes,
+        // so nothing new exists until 12:15 whatever the clock here says.
+        now = now.plusSeconds(14 * 60)
         weather.current()
 
-        assertEquals(1, requests.size)
+        assertEquals("asking sooner cannot produce a value that does not exist", 1, requests.size)
     }
 
     @Test
-    fun `a reading older than the window is asked for again`() = runTest {
+    fun `once the source has stepped, it is asked again`() = runTest {
         val weather = answering(forecast)
 
         weather.current()
-        now = now.plusSeconds(11 * 60)
+        now = now.plusSeconds(16 * 60)
         weather.current()
 
         assertEquals(2, requests.size)
     }
 
     @Test
-    fun `on mobile data the same reading lasts three times as long`() = runTest {
+    fun `mobile data does not buy the reader a staler reading`() = runTest {
         val weather = answering(forecast)
 
         weather.current()
-        metered = true
-        now = now.plusSeconds(11 * 60)
+        now = now.plusSeconds(16 * 60)
         weather.current()
 
-        assertEquals("the reader is paying for this one", 1, requests.size)
+        // There is no metered window any more. Every request this makes now
+        // returns something the reader does not already have, and one costs
+        // 300 bytes against the 247 kilobytes of a single article image.
+        assertEquals("the saving was in the wrong place", 2, requests.size)
     }
 
     @Test
