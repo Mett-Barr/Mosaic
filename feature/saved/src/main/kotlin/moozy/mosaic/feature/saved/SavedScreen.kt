@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moozy.mosaic.domain.model.ArticleId
-import moozy.mosaic.domain.model.ArticleItem
 
 @Composable
 fun SavedRoute(
@@ -75,7 +74,7 @@ fun SavedScreen(
 
 @Composable
 private fun SavedCard(
-    article: ArticleItem,
+    article: SavedRow,
     onOpen: () -> Unit,
     onLetGo: () -> Unit,
     modifier: Modifier = Modifier,

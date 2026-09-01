@@ -2,7 +2,6 @@ package moozy.mosaic.feature.saved
 
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
-import moozy.mosaic.domain.model.ArticleItem
 
 /**
  * What the kept list can be showing.
@@ -16,5 +15,5 @@ sealed interface SavedUiState {
 
     data object Empty : SavedUiState
 
-    data class Content(val articles: ImmutableList<ArticleItem>) : SavedUiState
+    data class Content(val articles: ImmutableList<SavedRow>) : SavedUiState
 }

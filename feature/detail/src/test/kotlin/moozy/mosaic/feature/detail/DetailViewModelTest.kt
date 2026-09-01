@@ -117,7 +117,7 @@ class DetailViewModelTest {
             awaitItem()
 
             val shown = (awaitItem() as DetailUiState.Content).article
-            assertEquals(article(), shown)
+            assertEquals(article().view(), shown)
         }
     }
 
@@ -129,12 +129,18 @@ class DetailViewModelTest {
         missing.state.test {
             missing.open(ArticleId("1"))
             awaitItem()
-            assertEquals(FeedFailure.Server(404), (awaitItem() as DetailUiState.Failed).reason)
+            assertEquals(
+                "The feed is having trouble.",
+                (awaitItem() as DetailUiState.Failed).hint,
+            )
         }
         offline.state.test {
             offline.open(ArticleId("1"))
             awaitItem()
-            assertTrue((awaitItem() as DetailUiState.Failed).reason is FeedFailure.Offline)
+            assertEquals(
+                "The article will open when the connection is back.",
+                (awaitItem() as DetailUiState.Failed).hint,
+            )
         }
     }
 
@@ -249,7 +255,7 @@ class DetailViewModelTest {
 
             val state = awaitItem()
             assertTrue("the kept copy should have been enough, got $state", state is DetailUiState.Content)
-            assertEquals(article(), (state as DetailUiState.Content).article)
+            assertEquals(article().view(), (state as DetailUiState.Content).article)
             assertTrue("and it is still marked as kept", state.saved)
         }
     }

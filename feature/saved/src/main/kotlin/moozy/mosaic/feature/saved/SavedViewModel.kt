@@ -29,7 +29,7 @@ class SavedViewModel @Inject constructor(
             if (articles.isEmpty()) {
                 SavedUiState.Empty
             } else {
-                SavedUiState.Content(articles.toImmutableList())
+                SavedUiState.Content(articles.map { it.row() }.toImmutableList())
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(SUBSCRIPTION_GRACE), SavedUiState.Empty)

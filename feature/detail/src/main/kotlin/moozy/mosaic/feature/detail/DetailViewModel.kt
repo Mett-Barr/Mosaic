@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moozy.mosaic.domain.model.ArticleId
+import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
@@ -32,6 +33,9 @@ class DetailViewModel @Inject constructor(
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
 
     private var showing: ArticleId? = null
+    // The article itself, not the view of it: keeping one means handing the
+    // whole thing to the store, and the screen was only given the words.
+    private var holding: ArticleItem? = null
     private var loading: Job? = null
 
     fun open(id: ArticleId) {
@@ -45,11 +49,14 @@ class DetailViewModel @Inject constructor(
     }
 
     private suspend fun keptCopyOf(id: ArticleId): DetailUiState.Content? =
-        kept.saved.first().firstOrNull { it.id == id }?.let { DetailUiState.Content(it, saved = true) }
+        kept.saved.first().firstOrNull { it.id == id }?.let {
+            holding = it
+            DetailUiState.Content(it.view(), saved = true)
+        }
 
     /** Keep this article to read later, network or no network. */
     fun keep() {
-        val article = (_state.value as? DetailUiState.Content)?.article ?: return
+        val article = holding ?: return
         viewModelScope.launch { kept.save(article) }
     }
 
@@ -65,9 +72,10 @@ class DetailViewModel @Inject constructor(
         // from somewhere else has to show up here too.
         viewModelScope.launch {
             kept.saved.collect { saved ->
-                val showing = _state.value
-                if (showing is DetailUiState.Content) {
-                    _state.value = showing.copy(saved = saved.any { it.id == showing.article.id })
+                val onScreen = _state.value
+                val id = holding?.id
+                if (onScreen is DetailUiState.Content && id != null) {
+                    _state.value = onScreen.copy(saved = saved.any { it.id == id })
                 }
             }
         }
@@ -81,15 +89,22 @@ class DetailViewModel @Inject constructor(
         loading = viewModelScope.launch {
             _state.value = DetailUiState.Loading
             _state.value = when (val result = articles.article(id)) {
-                is ArticleResult.Loaded -> DetailUiState.Content(
-                    article = result.article,
-                    saved = kept.saved.first().any { it.id == result.article.id },
-                )
+                is ArticleResult.Loaded -> {
+                    holding = result.article
+                    DetailUiState.Content(
+                        article = result.article.view(),
+                        saved = kept.saved.first().any { it.id == result.article.id },
+                    )
+                }
                 // A reader who kept this one asked for it to be here when the
                 // network is not. Falling back to the copy they kept is the whole
                 // point of having kept it; failing anyway would make the button a
                 // decoration.
-                is ArticleResult.Failed -> keptCopyOf(id) ?: DetailUiState.Failed(result.reason)
+                is ArticleResult.Failed -> keptCopyOf(id) ?: DetailUiState.Failed(
+                    message = result.reason.headline(),
+                    hint = result.reason.hint(),
+                    canRetry = result.reason.worthTryingAgain(),
+                )
             }
         }
     }
