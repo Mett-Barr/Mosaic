@@ -184,11 +184,12 @@ class :app android-application
 | base URL 設定化 | 只有一個公開 endpoint，注入設定現在只會增加樣板 | 有第二個環境時 |
 | 被丟掉的資料列要報給誰 | 原因已經帶回呼叫端，但只有數量被用到 | 有遙測或 log 的去處之後 |
 | 畫面的自動化測試 | Compose 測試需要裝置或 Robolectric，兩者都還沒有；寫一個從未執行過的測試不算證據 | 接上 `connectedDebugAndroidTest` 或 Robolectric 之後 |
-| `:core:ui` 裡的共用 composable | 目前只有主題。三個 feature 各自畫自己的卡片，等到真的有兩個地方要同一個元件時再搬進去 | 有第二個共用元件時 |
+| 搜尋／過濾、轉場動畫、第三種來源 | 都是 nice-to-have。必備項目與它們的可驗證性優先 | 必備全部在裝置上驗過之後 |
 
 ## 這份專案是怎麼做出來的
 
 [`AGENTS.md`](AGENTS.md) 描述開發迴圈，以及人與 AI 的分工落在哪裡。
 [`DECISIONS.md`](DECISIONS.md) 記錄審查者會質疑的每一個選擇。
-[`AI_USAGE.md`](AI_USAGE.md) 記錄 agent 實際產出了什麼、哪些被否決。
+[`AI_USAGE.md`](AI_USAGE.md) 記錄 agent 實際產出了什麼、哪些被否決
+（逐輪的完整審查紀錄在 [`docs/ai-review-log.md`](docs/ai-review-log.md)）。
 [`docs/git-conventions.md`](docs/git-conventions.md) 是 commit 與分支的慣例。

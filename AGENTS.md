@@ -181,7 +181,7 @@ Assisted-by: LLM Claude Code
 | `AGENTS.md` | 前瞻·規則 | 本檔 |
 | `CLAUDE.md` | — | 只有一行 `@AGENTS.md`。Claude Code 讀 `CLAUDE.md` 而非 `AGENTS.md`（[官方文件](https://code.claude.com/docs/en/memory)），需要 import 橋接 |
 | `DECISIONS.md` | 當下·取捨 | 輕量版 [ADR](https://adr.github.io/)：選了什麼·考慮過什麼·取捨是什麼 |
-| `AI_USAGE.md` | 回顧·紀錄 | 實際發生了什麼：接受／拒絕／重寫，以及被 gate 抓到的錯 |
+| `AI_USAGE.md` | 回顧·紀錄 | 實際發生了什麼：接受／拒絕／重寫。**上限一頁**，逐輪原始紀錄在 `docs/ai-review-log.md` |
 
 **語言**：文件用中文，**識別字、程式碼註解、commit 訊息一律英文**。
 分界線是「這段字會不會出現在程式碼裡」——會的話跟著程式語言走，不會的話跟著讀者走。
