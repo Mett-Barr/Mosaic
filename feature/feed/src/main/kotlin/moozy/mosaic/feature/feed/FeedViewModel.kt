@@ -172,7 +172,6 @@ class FeedViewModel @Inject constructor(
         }
 }
 
-private const val SOMETHING_WENT_WRONG = "Something went wrong."
 
 /** Long enough to survive a rotation, short enough not to outlive the screen. */
 private const val WATCHING_GRACE = 5_000L
