@@ -16,6 +16,8 @@ detekt {
 android {
     lint { lintConfig = rootProject.file("lint.xml") }
 
+    testOptions.unitTests.isIncludeAndroidResources = true
+
     namespace = "moozy.mosaic.data"
     // API 37 ships with a minor version (platforms;android-37.0); omitting it
     // makes the tooling resolve a target that does not exist.
@@ -55,10 +57,19 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
+    // Only so that a Room DAO can be given a Context in a JVM test. No screen
+    // is tested with it: those still need a device, and that is written down
+    // in the README rather than pretended away.
+    kspTest(libs.androidx.room.compiler)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.ktor.client.mock)
