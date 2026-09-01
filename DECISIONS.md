@@ -645,3 +645,27 @@ val state = combine(_state, weather.current) { feed, sky ->
 
 **代價** —— 系統回收程序後切回來會重抓一次。這是刻意接受的。
 
+---
+
+## 26. 設計稿的每一個顏色都放進 Material 既有的色票欄位，不另開一組 token
+
+**選了** —— 把參考稿上量到的顏色映射到 `ColorScheme` 現成的欄位（`primaryContainer`、
+`secondaryContainer`、`surfaceContainer`、`tertiaryContainer`……），連同 `Shapes` 與
+`Typography` 一起定義在 `MosaicTheme`。畫面裡沒有任何一個 `Color(0xFF...)`。
+
+**當時還考慮** —— 開一個 `MosaicColors` data class 加 `CompositionLocal`，把漸層的起訖色、
+來源標籤的底色這些 Material 沒有對應語意的顏色收進去。這是擴充 Material 主題的標準做法，
+語意也誠實得多。
+
+**為什麼不** —— 要讀得到那個 `CompositionLocal`，就得 import 得到它，也就是
+`:feature:saved` 必須相依 `:core:ui`；而第 2 則那張 `allowedProjectDependencies` 只允許
+它相依 `:core:domain`。**主題是 Compose 從 composition root 傳下來的，不需要 Gradle 邊；
+一組自己的 token 需要。** 為了顏色去鬆綁架構規則，代價不對。
+
+**取捨** —— 有幾個欄位裝的東西和它的名字不完全相符：天氣卡的漸層是
+`primaryContainer → secondaryContainer`，來源標籤借用 `tertiaryContainer`。
+Material 的語意被挪用了一層，讀 theme 的人得看註解才知道為什麼。換來的是
+**模組圖一條邊都沒有新增**，而且連讀不到 `:core:ui` 的 `:feature:saved` 都拿得到整套配色。
+
+**同一個理由造成的重複** —— 離線／錯誤那張小卡在 `:feature:feed` 和 `:feature:saved`
+各寫了一份。能共用的前提同樣是那條被禁止的邊。十幾行的重複比一條架構例外便宜。
