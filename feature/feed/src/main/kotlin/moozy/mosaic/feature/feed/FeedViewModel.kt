@@ -59,6 +59,9 @@ class FeedViewModel @Inject constructor(
             // somewhere in it is worse than a list a few minutes old. A screen
             // showing nothing, or showing a failure, has nothing to lose.
             if (_state.value !is FeedUiState.Content) load(from = null)
+            // The first page can arrive twice: what was on disk, then what the
+            // source had. The second arrival says so rather than being waited for.
+            viewModelScope.launch { articles.changed.collect { refresh() } }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WATCHING_GRACE), FeedUiState.Loading)
 
@@ -78,6 +81,7 @@ class FeedViewModel @Inject constructor(
 
     fun refresh() {
         next = null
+        loading = false
         load(from = null)
     }
 
@@ -92,7 +96,8 @@ class FeedViewModel @Inject constructor(
         val before = _state.value
         viewModelScope.launch {
             _state.value = beganLoading(before, from)
-            _state.value = when (val result = articles.articles(after = from)) {
+            val result = if (from == null) articles.firstPage() else articles.nextPage(from)
+            _state.value = when (result) {
                 is ArticlesResult.Loaded -> loaded(result, before, from)
                 is ArticlesResult.Failed -> failed(result.reason, before, from)
             }

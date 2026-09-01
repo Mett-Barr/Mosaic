@@ -69,6 +69,9 @@ internal object DataModule {
     ): ArticleRepository = ArticlesWithAFallback(
         network = NetworkArticleRepository(api),
         cache = FileArticleCache(File(context.cacheDir, "articles.json"), Dispatchers.IO),
+        // Outlives every screen, because a refresh already paid for must not be
+        // cancelled by the reader walking away from the screen that asked for it.
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     )
 
     /**

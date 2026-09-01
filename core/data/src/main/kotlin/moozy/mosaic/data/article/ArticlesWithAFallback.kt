@@ -1,5 +1,9 @@
 package moozy.mosaic.data.article
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
@@ -26,27 +30,61 @@ internal interface ArticleCache {
 }
 
 /**
- * What the feed shows when the request for it fails.
+ * The top of the list, from a file when there is one and from the source
+ * otherwise -- and a newer one on the way whenever the file answered.
  *
- * Not a freshness policy. Every ask for a first page goes to the network,
- * because the only two things that ask are the app starting and the reader
- * pulling the list down, and neither of those is waste. What is written down
- * is what the reader sees when the network cannot answer -- the same promise
- * the saved articles make, one layer up: something readable beats an apology.
+ * Not a freshness policy: there is no window, and nothing is ever shown instead
+ * of asking. What the file buys is the moment after a cold start, when the
+ * process has been killed and the reader is looking at a screen that would
+ * otherwise be empty until a request comes back.
  *
  * Only the top of the list is kept. A continuation is a question about what
  * comes after something the reader is already holding, and an old answer to it
  * is a different list rather than the next page of this one.
+ *
+ * [scope] outlives every screen because the errand it runs does: a refresh
+ * started by one reader must not be cancelled because they walked away from the
+ * screen a second later. The request has already been paid for.
  */
 internal class ArticlesWithAFallback(
     private val network: ArticleRepository,
     private val cache: ArticleCache,
+    private val scope: CoroutineScope,
 ) : ArticleRepository {
 
-    override suspend fun articles(after: PageCursor?): ArticlesResult {
-        if (after != null) return network.articles(after)
+    private val replacements = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    override val changed: Flow<Unit> = replacements
 
-        return when (val fresh = network.articles(after = null)) {
+    /** Whether what is held came from the source rather than off the disk. */
+    private var holdingTheNewest = false
+
+    override suspend fun firstPage(): ArticlesResult {
+        val stored = cache.read()
+        if (stored == null || holdingTheNewest) {
+            // Nothing to show, or what is shown is already the newest there is.
+            // Either way the answer is whatever the source says, waited for.
+            return fetch() ?: stored?.asResult() ?: ArticlesResult.Failed(FeedFailure.Offline())
+        }
+        // Something to show, and it came off a disk. Show it, and go and look.
+        scope.launch { refreshFirstPage() }
+        return stored.asResult()
+    }
+
+    override suspend fun nextPage(after: PageCursor): ArticlesResult = network.nextPage(after)
+
+    override suspend fun refreshFirstPage() {
+        val hadOne = cache.read() != null
+        if (fetch() != null && hadOne) {
+            // Only when it replaced one somebody could be looking at. Announcing
+            // the first arrival would ask the screen to redraw what it is
+            // already drawing.
+            replacements.tryEmit(Unit)
+        }
+    }
+
+    /** The source, written down and remembered as the newest thing we have. */
+    private suspend fun fetch(): ArticlesResult.Loaded? =
+        when (val fresh = network.firstPage()) {
             is ArticlesResult.Loaded -> {
                 cache.write(
                     CachedArticles(
@@ -55,12 +93,12 @@ internal class ArticlesWithAFallback(
                         dropped = fresh.dropped,
                     ),
                 )
+                holdingTheNewest = true
                 fresh
             }
 
-            is ArticlesResult.Failed -> cache.read()?.asResult() ?: fresh
+            is ArticlesResult.Failed -> null
         }
-    }
 
     /**
      * The network first, because a single article is small and the reader has

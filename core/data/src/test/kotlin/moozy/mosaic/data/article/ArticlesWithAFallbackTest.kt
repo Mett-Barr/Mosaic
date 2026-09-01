@@ -3,7 +3,11 @@ package moozy.mosaic.data.article
 import java.time.Instant
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
@@ -19,13 +23,14 @@ import org.junit.Test
  * The half of the freshness policy that saves anything. Deciding what "fresh"
  * means costs no data; not making the request does.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ArticlesWithAFallbackTest {
 
     private val noon: Instant = Instant.parse("2026-09-01T12:00:00Z")
     private var now: Instant = noon
 
-    private fun caching(network: ArticleRepository, cache: FakeCache = FakeCache()) =
-        ArticlesWithAFallback(network = network, cache = cache)
+    private fun TestScope.caching(network: ArticleRepository, cache: FakeCache = FakeCache()) =
+        ArticlesWithAFallback(network = network, cache = cache, scope = backgroundScope)
 
     @Test
     fun `the page already here is given at once, and a newer one is sent for`() = runTest {
@@ -70,22 +75,22 @@ class ArticlesWithAFallbackTest {
         cache.write(CachedArticles(listOf(article(1)), next = null))
         val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(2)), next = null)), cache)
 
-        val said = mutableListOf<Unit>()
-        val watching = launch { caching.changed.collect { said += it } }
+        var said = 0
+        val watching = launch { caching.changed.collect { said++ } }
         runCurrent()
         caching.refreshFirstPage()
         runCurrent()
         watching.cancel()
 
-        assertEquals("whoever is showing the old one needs to know", 1, said.size)
+        assertEquals("whoever is showing the old one needs to know", 1, said)
     }
 
     @Test
     fun `arriving where there was nothing does not say anything changed`() = runTest {
         val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)))
 
-        val said = mutableListOf<Unit>()
-        val watching = launch { caching.changed.collect { said += it } }
+        var said = 0
+        val watching = launch { caching.changed.collect { said++ } }
         runCurrent()
         caching.refreshFirstPage()
         runCurrent()
@@ -93,7 +98,7 @@ class ArticlesWithAFallbackTest {
 
         // Nobody was shown the old one, because there was no old one. Saying it
         // changed would ask the screen to redraw what it is already drawing.
-        assertEquals(emptyList<Unit>(), said)
+        assertEquals("nobody is looking at an older one", 0, said)
     }
 
     @Test
@@ -104,9 +109,9 @@ class ArticlesWithAFallbackTest {
         )
         val caching = caching(network)
 
-        caching.articles(after = null)
+        caching.firstPage()
         now = noon.plusSeconds(60)
-        val second = caching.articles(after = null)
+        val second = caching.firstPage()
 
         // There is no window any more. The only two things that ask for a first
         // page are the app starting and the reader pulling the list down, and
@@ -123,9 +128,9 @@ class ArticlesWithAFallbackTest {
         )
         val caching = caching(network)
 
-        caching.articles(after = null)
+        caching.firstPage()
         now = noon.plusSeconds(60 * 60)
-        val offline = caching.articles(after = null)
+        val offline = caching.firstPage()
 
         assertTrue("expected the cached page, got $offline", offline is ArticlesResult.Loaded)
         assertEquals(listOf("1"), (offline as ArticlesResult.Loaded).articles.map { it.id.value })
@@ -135,7 +140,7 @@ class ArticlesWithAFallbackTest {
     fun `a page that will not load with nothing cached still fails`() = runTest {
         val caching = caching(CountingArticles(ArticlesResult.Failed(FeedFailure.Offline())))
 
-        val result = caching.articles(after = null)
+        val result = caching.firstPage()
 
         assertTrue("expected a failure, got $result", result is ArticlesResult.Failed)
     }
@@ -145,12 +150,12 @@ class ArticlesWithAFallbackTest {
         val cache = FakeCache()
         val network = CountingArticles(ArticlesResult.Loaded(emptyList(), next = null, dropped = 3))
 
-        caching(network, cache).articles(after = null)
+        caching(network, cache).firstPage()
         now = noon.plusSeconds(60)
         // The stored page is only reached through a failure now, which is the
         // only way it is ever reached at all.
         val offline = CountingArticles(ArticlesResult.Failed(FeedFailure.Offline()))
-        val second = caching(offline, cache).articles(after = null)
+        val second = caching(offline, cache).firstPage()
 
         assertEquals(
             "an unreadable page read back as empty is a lie the cache invented",
@@ -167,8 +172,8 @@ class ArticlesWithAFallbackTest {
         )
         val caching = caching(network)
 
-        caching.articles(after = PageCursor("https://api.spaceflightnewsapi.net/v4/articles/?offset=20"))
-        caching.articles(after = PageCursor("https://api.spaceflightnewsapi.net/v4/articles/?offset=20"))
+        caching.nextPage(PageCursor("https://api.spaceflightnewsapi.net/v4/articles/?offset=20"))
+        caching.nextPage(PageCursor("https://api.spaceflightnewsapi.net/v4/articles/?offset=20"))
 
         assertEquals("a continuation is not the top of the list", 2, network.calls)
     }
@@ -180,7 +185,7 @@ class ArticlesWithAFallbackTest {
             CountingArticles(ArticlesResult.Loaded(listOf(article(1), article(2)), next = null)),
             cache,
         )
-        caching.articles(after = null)
+        caching.firstPage()
 
         val offline = caching(
             CountingArticles(articleAnswer = ArticleResult.Failed(FeedFailure.Offline())),
@@ -210,7 +215,7 @@ class ArticlesWithAFallbackTest {
             CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
             cache,
         )
-        caching.articles(after = null)
+        caching.firstPage()
 
         val missing = caching(
             CountingArticles(articleAnswer = ArticleResult.Failed(FeedFailure.Server(404))),
@@ -227,7 +232,7 @@ class ArticlesWithAFallbackTest {
     fun `a fetched page is written down for the next run`() = runTest {
         val cache = FakeCache()
         caching(CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)), cache)
-            .articles(after = null)
+            .firstPage()
 
         assertEquals(listOf("1"), cache.stored?.articles?.map { it.id.value })
     }
@@ -249,8 +254,20 @@ class ArticlesWithAFallbackTest {
         private val queue = ArrayDeque(answers.toList())
         var calls = 0
 
-        override suspend fun articles(after: PageCursor?): ArticlesResult {
+        /** Which cursors were asked about, null meaning the top of the list. */
+        val asked = mutableListOf<PageCursor?>()
+
+        override suspend fun firstPage(): ArticlesResult = page(after = null)
+
+        override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
+
+        override suspend fun refreshFirstPage() = Unit
+
+        override val changed: Flow<Unit> = emptyFlow()
+
+        private fun page(after: PageCursor?): ArticlesResult {
             calls++
+            asked += after
             return queue.removeFirstOrNull() ?: error("the feed asked for a page nobody prepared")
         }
 
