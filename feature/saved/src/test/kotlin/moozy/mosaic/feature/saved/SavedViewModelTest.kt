@@ -33,6 +33,16 @@ class SavedViewModelTest {
     fun releaseDispatcher() = Dispatchers.resetMain()
 
     @Test
+    fun `a kept article reaches the screen as words, not as a domain object`() = runTest {
+        SavedViewModel(FakeSaved(article(1))).state.test {
+            val row = (awaitItem() as SavedUiState.Content).articles.single()
+
+            assertEquals("Article 1", row.title)
+            assertEquals("NASA", row.source)
+        }
+    }
+
+    @Test
     fun `a reader with nothing kept is told so, not shown an empty list`() = runTest {
         SavedViewModel(FakeSaved()).state.test {
             assertEquals(SavedUiState.Empty, awaitItem())
