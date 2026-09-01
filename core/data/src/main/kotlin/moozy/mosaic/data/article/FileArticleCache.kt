@@ -86,7 +86,16 @@ internal class FileArticleCache(
         withContext(io) {
             try {
                 file.parentFile?.mkdirs()
-                file.writeText(json.encodeToString(StoredPage.serializer(), articles.stored()))
+                // Through a second file and a rename: writeText empties the
+                // destination before it fills it, and a process killed in
+                // between would leave a file that is neither the old page nor
+                // the new one. A rename cannot be half-done.
+                val writing = File(file.parentFile, file.name + ".writing")
+                writing.writeText(json.encodeToString(StoredPage.serializer(), articles.stored()))
+                if (!writing.renameTo(file)) {
+                    file.delete()
+                    writing.renameTo(file)
+                }
             } catch (unwritable: IOException) {
                 lastProblem = "the page could not be written down: ${unwritable.message}"
             }

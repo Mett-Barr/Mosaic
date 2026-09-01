@@ -59,6 +59,43 @@ class FileSavedArticlesTest {
     }
 
     @Test
+    fun `a save that cannot be written leaves the list that was already there`() = runTest {
+        val file = folder.newFile("saved.json")
+        val store = FileSavedArticles(file, UnconfinedTestDispatcher())
+        store.save(article(1))
+        // Occupy the path every write has to go through, so that the next one
+        // cannot get there. A process killed mid-write is the same shape of
+        // problem: the destination must not be what is being written into.
+        File(folder.root, "saved.json.writing").mkdir()
+
+        store.save(article(2))
+
+        assertEquals(listOf(article(1)), store.saved.first())
+        val laterRun = FileSavedArticles(file, UnconfinedTestDispatcher())
+        assertEquals(listOf(article(1)), laterRun.saved.first())
+    }
+
+    @Test
+    fun `a save that cannot be written says so rather than throwing`() = runTest {
+        val file = folder.newFile("saved.json")
+        val store = FileSavedArticles(file, UnconfinedTestDispatcher())
+        File(folder.root, "saved.json.writing").mkdir()
+
+        store.save(article(1))
+
+        assertNotNull(store.lastProblem.first())
+    }
+
+    @Test
+    fun `a finished save leaves nothing half-written behind`() = runTest {
+        val file = folder.newFile("saved.json")
+
+        store(file).save(article(1))
+
+        assertEquals(listOf("saved.json"), folder.root.list()?.sorted())
+    }
+
+    @Test
     fun `an article that was saved can be read back`() = runTest {
         val store = store()
 
