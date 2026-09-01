@@ -47,26 +47,32 @@ internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(
 /**
  * The current weather for one place, asked for no more often than it changes.
  *
- * The reading is held in memory rather than in a file, which is the difference
- * between this and the article cache. An article list an hour old is still worth
- * showing while a fresh one loads; a temperature from the last time the app ran
- * is not worth showing at all, so there is nothing to keep across launches.
+ * The reading is kept by a [WeatherCache] rather than in a field, so that the
+ * system reclaiming the app does not turn a reading this still considers fresh
+ * into another request. How long it stays worth showing is [freshness]'s answer
+ * and nothing to do with where it is kept.
+ *
+ * The cache is a constructor argument rather than a decorator, which is where
+ * the articles put theirs. There the cache answers a different question -- what
+ * to show when a request fails -- and so it wraps whatever the source is. Here
+ * there is one source and the reading is the whole of what is kept, so a layer
+ * between them would only be a layer.
  */
 internal class OpenMeteoWeather(
     private val client: HttpClient,
     private val place: Place,
     private val clock: Clock,
     private val dataCost: DataCost,
+    private val cache: WeatherCache,
     private val freshness: Freshness = Cadence.WEATHER,
 ) : WeatherRepository {
 
-    private var lastReading: Weather? = null
-    private var lastAskedAt: Instant? = null
+    private var remembered: CachedWeather? = null
 
     override suspend fun current(): WeatherResult {
-        val remembered = lastReading
-        if (remembered != null && !freshness.isStale(lastAskedAt, clock.now(), dataCost.isMetered())) {
-            return WeatherResult.Loaded(remembered)
+        val known = remembered ?: cache.read()?.also { remembered = it }
+        if (known != null && !freshness.isStale(known.askedAt, clock.now(), dataCost.isMetered())) {
+            return WeatherResult.Loaded(known.weather)
         }
         return fetch()
     }
@@ -83,10 +89,11 @@ internal class OpenMeteoWeather(
                 parameter("forecast_days", 1)
             }.body()
             val weather = forecast.toWeather(place.name)
-            // Only a reading is remembered. A failure that was remembered would
-            // stop this asking again at exactly the moment it should.
-            lastReading = weather
-            lastAskedAt = clock.now()
+            // Only a reading is kept. A failure that was kept would stop this
+            // asking again at exactly the moment it should.
+            val reading = CachedWeather(weather, clock.now())
+            remembered = reading
+            cache.write(reading)
             WeatherResult.Loaded(weather)
         } catch (cancelled: CancellationException) {
             throw cancelled
