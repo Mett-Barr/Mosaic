@@ -4,23 +4,25 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.network.sockets.ConnectTimeoutException
-import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.serialization.ContentConvertException
 import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
-import java.net.SocketTimeoutException
-import java.time.Instant
+import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.SerializationException
 import moozy.mosaic.domain.model.Clock
-import moozy.mosaic.domain.model.FeedFailure
-import moozy.mosaic.domain.model.WeatherResult
+import moozy.mosaic.domain.model.Weather
 import moozy.mosaic.domain.repository.WeatherRepository
 
 /** Where the weather is being asked about, and what to call it. */
@@ -41,46 +43,76 @@ internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(
 }
 
 /**
- * The current weather for one place, asked for no more often than it changes.
+ * The current weather for one place, as a stream that keeps itself current.
  *
- * When to ask again is the source's answer, not this app's: every reading
- * carries its own stamp and the interval the source produces them on, so the
- * next moment worth a request is the source's next step. Asking sooner cannot
- * produce a value that does not exist yet.
+ * A stream rather than a question, because the weather changes whether or not
+ * anybody asks. Making it something to ask for pushed the decision of when to
+ * ask onto every caller, and a caller that forgets is a card frozen at whatever
+ * it said when the app started.
  *
- * The reading is kept by a [WeatherCache] rather than in a field, so that the
- * system reclaiming the app does not turn a reading still worth reusing into
- * another request.
+ * While somebody is watching, this asks again at the source's next step and no
+ * sooner: every reading carries the interval Open-Meteo produces them on, so
+ * asking earlier cannot return a value that does not exist yet. While nobody is
+ * watching, it holds the last reading and makes no requests at all -- an
+ * invisible screen is not worth anybody's data.
  *
- * The cache is a constructor argument rather than a decorator, which is where
- * the articles put theirs. There the cache answers a different question -- what
- * to show when a request fails -- and so it wraps whatever the source is. Here
- * there is one source and the reading is the whole of what is kept, so a layer
- * between them would only be a layer.
+ * The value is a [Weather] or nothing. A failure is not a state this app shows:
+ * the reader came for the articles, and a card that cannot be filled is better
+ * absent than apologising. So a failed request leaves whatever was there.
  */
 internal class OpenMeteoWeather(
     private val client: HttpClient,
     private val place: Place,
     private val clock: Clock,
-    private val cache: WeatherCache,
+    private val store: WeatherStore,
+    scope: CoroutineScope,
 ) : WeatherRepository {
 
-    private var remembered: CachedWeather? = null
+    /**
+     * Why the last request did not produce a reading, if it did not.
+     *
+     * Nothing is shown to the reader about it -- a missing card is the whole of
+     * what a failure means here. Keeping the reason still beats discarding it: a
+     * card that never appears is worth being able to find out about.
+     */
+    internal var lastProblem: String? = null
+        private set
 
-    override suspend fun current(): WeatherResult {
-        val known = remembered ?: cache.read()?.also { remembered = it }
-        // No metered window. A request that returns something new is not waste,
-        // and one that returns what is already held is -- which is the class of
-        // request the source's own schedule removes. Measured: a reading costs
-        // 300 bytes on the wire and one article image costs 247 kilobytes.
-        if (known != null && clock.now() < known.askAgainAt) {
-            return WeatherResult.Loaded(known.weather)
+    override val current: StateFlow<Weather?> =
+        readings().stateIn(scope, SharingStarted.WhileSubscribed(WATCHING_GRACE), null)
+
+    private fun readings(): Flow<Weather?> = flow {
+        var held = store.read()
+        if (held != null) emit(held.weather)
+        while (true) {
+            val fetched = fetch()
+            if (fetched != null) {
+                held = fetched
+                store.write(fetched)
+                emit(fetched.weather)
+            } else if (held == null) {
+                // Nothing has ever arrived, so there is nothing to leave alone.
+                emit(null)
+            }
+            delay(untilTheSourceHasMore(held))
         }
-        return fetch()
+    }
+
+    /**
+     * How long to wait before asking again.
+     *
+     * The source's next step when there is a reading. A shorter fixed wait when
+     * there is not: the failure might be a moment of no signal, and fifteen
+     * minutes of an empty card is a long time to punish somebody for that.
+     */
+    private fun untilTheSourceHasMore(held: StoredReading?): Long {
+        val reading = held ?: return AFTER_A_FAILURE_MILLIS
+        val wait = Duration.between(clock.now(), reading.askAgainAt).toMillis()
+        return wait.coerceAtLeast(AFTER_A_FAILURE_MILLIS)
     }
 
     @Suppress("TooGenericExceptionCaught", "RethrowCaughtException")
-    private suspend fun fetch(): WeatherResult =
+    private suspend fun fetch(): StoredReading? =
         try {
             val forecast: ForecastDto = client.get(FORECAST_URL) {
                 parameter("latitude", place.latitude)
@@ -90,36 +122,25 @@ internal class OpenMeteoWeather(
                 parameter("timezone", "auto")
                 parameter("forecast_days", 1)
             }.body()
-            val weather = forecast.toWeather(place.name)
-            // Only a reading is kept. A failure that was kept would stop this
-            // asking again at exactly the moment it should.
-            val reading = CachedWeather(weather, weather.askAgainAfter(clock.now()))
-            remembered = reading
-            cache.write(reading)
-            WeatherResult.Loaded(weather)
+            lastProblem = null
+            StoredReading(forecast.toWeather(place.name), clock.now())
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (server: ResponseException) {
-            WeatherResult.Failed(FeedFailure.Server(server.response.status.value, server.message))
         } catch (unreadable: ContentConvertException) {
-            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
+            failed("the forecast could not be read", unreadable)
         } catch (unreadable: NoTransformationFoundException) {
-            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
+            failed("the forecast arrived in a shape this app cannot read", unreadable)
         } catch (unreadable: SerializationException) {
-            WeatherResult.Failed(FeedFailure.Unreadable(unreadable.message))
-        } catch (network: IOException) {
-            WeatherResult.Failed(network.asFailure())
+            failed("the forecast could not be read", unreadable)
+        } catch (unreachable: IOException) {
+            failed("the forecast could not be reached", unreachable)
         } catch (unexpected: Exception) {
-            WeatherResult.Failed(FeedFailure.Unexpected(unexpected.message))
+            failed("asking for the forecast went wrong in a way nobody expected", unexpected)
         }
 
-    private fun IOException.asFailure(): FeedFailure = when (this) {
-        is HttpRequestTimeoutException,
-        is ConnectTimeoutException,
-        is SocketTimeoutException,
-        -> FeedFailure.Timeout(message)
-
-        else -> FeedFailure.Offline(message)
+    private fun failed(what: String, cause: Throwable): StoredReading? {
+        lastProblem = "$what: ${cause.message}"
+        return null
     }
 
     private companion object {
@@ -130,3 +151,9 @@ internal class OpenMeteoWeather(
 private const val REQUEST_TIMEOUT_MILLIS = 15_000L
 private const val CONNECT_TIMEOUT_MILLIS = 10_000L
 private const val SOCKET_TIMEOUT_MILLIS = 15_000L
+
+/** Long enough to survive a rotation, short enough not to outlive the screen. */
+private const val WATCHING_GRACE = 5_000L
+
+/** Also the floor on any wait, so a clock that jumps cannot become a busy loop. */
+private const val AFTER_A_FAILURE_MILLIS = 60_000L

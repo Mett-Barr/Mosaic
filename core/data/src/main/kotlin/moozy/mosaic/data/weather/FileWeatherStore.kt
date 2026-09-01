@@ -21,10 +21,10 @@ import moozy.mosaic.domain.model.Weather
  * cache and the saved list. Losing it costs one request, so a file that will not
  * parse reads as nothing at all and the next reading writes over it.
  */
-internal class FileWeatherCache(
+internal class FileWeatherStore(
     private val file: File,
     private val io: CoroutineDispatcher,
-) : WeatherCache {
+) : WeatherStore {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -38,13 +38,13 @@ internal class FileWeatherCache(
     internal var lastProblem: String? = null
         private set
 
-    override suspend fun read(): CachedWeather? = withContext(io) {
+    override suspend fun read(): StoredReading? = withContext(io) {
         try {
             file.takeIf { it.exists() }
                 ?.readText()
                 ?.takeIf { it.isNotBlank() }
                 ?.let { json.decodeFromString(StoredWeather.serializer(), it) }
-                ?.toCached()
+                ?.toStored()
         } catch (unreadable: SerializationException) {
             // First, because SerializationException *is* an
             // IllegalArgumentException: catching the general one above this would
@@ -76,7 +76,7 @@ internal class FileWeatherCache(
      * Best effort, like the article cache. A reading that arrived must reach the
      * reader whether or not it can also be written down.
      */
-    override suspend fun write(weather: CachedWeather) {
+    override suspend fun write(reading: StoredReading) {
         withContext(io) {
             try {
                 file.parentFile?.mkdirs()
@@ -85,7 +85,7 @@ internal class FileWeatherCache(
                 // between would leave a file that is neither the old reading nor
                 // the new one. A rename cannot be half-done.
                 val writing = File(file.parentFile, file.name + ".writing")
-                writing.writeText(json.encodeToString(StoredWeather.serializer(), weather.stored()))
+                writing.writeText(json.encodeToString(StoredWeather.serializer(), reading.stored()))
                 if (!writing.renameTo(file)) {
                     file.delete()
                     writing.renameTo(file)
@@ -106,10 +106,10 @@ private data class StoredWeather(
     val sky: String,
     @SerialName("measured_at") val measuredAt: String,
     @SerialName("steps_every_seconds") val stepsEverySeconds: Long,
-    @SerialName("ask_again_at") val askAgainAt: String,
+    @SerialName("fetched_at") val fetchedAt: String,
 )
 
-private fun CachedWeather.stored() = StoredWeather(
+private fun StoredReading.stored() = StoredWeather(
     place = weather.place,
     temperature = weather.temperature,
     high = weather.high,
@@ -117,10 +117,10 @@ private fun CachedWeather.stored() = StoredWeather(
     sky = weather.sky.name,
     measuredAt = weather.measuredAt.toString(),
     stepsEverySeconds = weather.stepsEvery.seconds,
-    askAgainAt = askAgainAt.toString(),
+    fetchedAt = fetchedAt.toString(),
 )
 
-private fun StoredWeather.toCached() = CachedWeather(
+private fun StoredWeather.toStored() = StoredReading(
     weather = Weather(
         place = place,
         temperature = temperature,
@@ -130,5 +130,5 @@ private fun StoredWeather.toCached() = CachedWeather(
         measuredAt = Instant.parse(measuredAt),
         stepsEvery = Duration.ofSeconds(stepsEverySeconds),
     ),
-    askAgainAt = Instant.parse(askAgainAt),
+    fetchedAt = Instant.parse(fetchedAt),
 )

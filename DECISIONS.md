@@ -565,3 +565,48 @@ nextReading = measuredAt + interval × ceil((now - measuredAt) / interval)
 「少了新的幾篇」，不會讓已顯示的內容變成假的（實測：同一篇文章 3.5 小時前存下的
 六個顯示欄位與現在的 API 完全相同），所以固定窗對它是合適的形狀。
 
+## 24. 天氣是一條串流，不是一個可以問的問題
+
+**這一則是使用者決定的。**
+
+**選了** —— `WeatherRepository` 對外只有一個 `StateFlow<Weather?>`：
+
+```kotlin
+interface WeatherRepository {
+    val current: StateFlow<Weather?>
+}
+```
+
+有人在看 → 它照來源的節奏自己保持最新。沒人在看 → 它保留最後一筆，一個請求都不發。
+
+**為什麼 `suspend fun current()` 是錯的形狀** —— 它把「什麼時候該問」推給每一個呼叫端，
+而這件事**外洩了兩次**：第一次是政策算出了「05:30 該再問」卻**沒有任何東西會去問**
+（唯一的呼叫端是 `FeedViewModel.init`，而那個 ViewModel 綁在根目的地上，
+整個 session 只建構一次）；第二次是我的修法——在 composable 上掛一個
+`LifecycleResumeEffect` 去補洞，那是在錯的東西上疊補丁。
+
+**串流讓那個決定回到唯一知道答案的地方**：知道來源多久產生一個新值的，只有來源。
+
+**沒有失敗狀態** —— 型別是 `Weather?` 而不是 `WeatherResult`。因為 `WeatherResult.Failed`
+從頭到尾只被用來做一件事：不顯示卡片。讀者是為了文章來的，一張填不出來的卡片，
+不見比道歉好。失敗**不清掉手上那一筆**——原因留在 `lastProblem` 供查。
+
+**畫面用 `combine` 接上，不是用欄位帶** —— `FeedViewModel` 原本每一條建出 `Content`
+的路徑都要記得 `weather = sky`，而**曾經有一條忘了**，卡片就會依請求回來的先後而消失
+（第二個模型抓到的）。現在是：
+
+```kotlin
+val state = combine(_state, weather.current) { feed, sky ->
+    if (feed is Content) feed.copy(weather = sky?.headline()) else feed
+}
+```
+
+**結構上不可能再漏掉。**
+
+**取捨** —— repository 需要一個活得比畫面久的 scope（DI 注入一個 application scope）。
+這牴觸了 `DECISIONS.md` 21 寫的「沒有 scope 是自己開的」，那一條說的是**畫面的工作**；
+一條被所有畫面共用的串流不能隨著其中一個畫面結束。這是官方 data-layer 的標準形狀。
+
+**存的是 `fetchedAt` 不是 `askAgainAt`** —— 存輸入而不是存結論。規則改動時，
+已經在磁碟上的讀數會跟著新規則走；存結論的話會卡在舊規則直到被重抓。
+
