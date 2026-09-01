@@ -66,8 +66,13 @@ internal class FileSavedArticles(
     private suspend fun update(change: (List<StoredArticle>) -> List<StoredArticle>) {
         writing.withLock {
             val next = change(read())
-            withContext(io) { write(next) }
-            articles.value = next.readable()
+            // The list in memory follows the file, not the other way round. A
+            // change that could not be written down is a change that did not
+            // happen, and showing it anyway would tell the reader their article
+            // is saved when the next launch will disagree.
+            if (withContext(io) { write(next) }) {
+                articles.value = next.readable()
+            }
         }
     }
 
@@ -108,10 +113,30 @@ internal class FileSavedArticles(
         }
     }
 
-    private fun write(next: List<StoredArticle>) {
-        file.parentFile?.mkdirs()
-        file.writeText(json.encodeToString(SAVED, next))
-    }
+    /**
+     * Write the whole list, or leave the one that is there alone.
+     *
+     * Through a second file and a rename, because writeText empties the
+     * destination before it fills it: a process killed in between -- a phone out
+     * of battery mid-save -- would leave the reader with an empty reading list
+     * rather than the one they had. A rename cannot be half-done.
+     */
+    private fun write(next: List<StoredArticle>): Boolean =
+        try {
+            file.parentFile?.mkdirs()
+            val writing = File(file.parentFile, file.name + ".writing")
+            writing.writeText(json.encodeToString(SAVED, next))
+            check(writing.renameTo(file) || (file.delete() && writing.renameTo(file))) {
+                "the list could not be moved into place"
+            }
+            true
+        } catch (unwritable: IOException) {
+            problem.value = "the saved list could not be written: ${unwritable.message}"
+            false
+        } catch (unplaceable: IllegalStateException) {
+            problem.value = "the saved list could not be written: ${unplaceable.message}"
+            false
+        }
 
     private companion object {
         val SAVED = kotlinx.serialization.builtins.ListSerializer(StoredArticle.serializer())

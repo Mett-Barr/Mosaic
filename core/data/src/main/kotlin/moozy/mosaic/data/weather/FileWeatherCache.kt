@@ -79,7 +79,16 @@ internal class FileWeatherCache(
         withContext(io) {
             try {
                 file.parentFile?.mkdirs()
-                file.writeText(json.encodeToString(StoredWeather.serializer(), weather.stored()))
+                // Through a second file and a rename: writeText empties the
+                // destination before it fills it, and a process killed in
+                // between would leave a file that is neither the old reading nor
+                // the new one. A rename cannot be half-done.
+                val writing = File(file.parentFile, file.name + ".writing")
+                writing.writeText(json.encodeToString(StoredWeather.serializer(), weather.stored()))
+                if (!writing.renameTo(file)) {
+                    file.delete()
+                    writing.renameTo(file)
+                }
             } catch (unwritable: IOException) {
                 lastProblem = "the reading could not be written down: ${unwritable.message}"
             }
