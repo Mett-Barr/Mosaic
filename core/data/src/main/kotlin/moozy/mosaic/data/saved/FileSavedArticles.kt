@@ -143,23 +143,6 @@ internal class FileSavedArticles(
     }
 }
 
-/**
- * What a saved article looks like on disk.
- *
- * Separate from [ArticleItem] so the domain does not have to know it is ever
- * written down, and so the file format can change without the model having to.
- */
-@Serializable
-internal data class StoredArticle(
-    val id: String,
-    val title: String,
-    val summary: String,
-    val source: String,
-    val url: String,
-    @SerialName("image_url") val imageUrl: String? = null,
-    @SerialName("published_at") val publishedAt: String,
-)
-
 private fun ArticleItem.stored() = StoredArticle(
     id = id.value,
     title = title,
@@ -168,14 +151,4 @@ private fun ArticleItem.stored() = StoredArticle(
     url = url,
     imageUrl = imageUrl,
     publishedAt = publishedAt.toString(),
-)
-
-private fun StoredArticle.toArticle() = ArticleItem(
-    id = ArticleId(id),
-    title = title,
-    summary = summary,
-    source = source,
-    url = url,
-    imageUrl = imageUrl,
-    publishedAt = Instant.parse(publishedAt),
 )

@@ -11,6 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
@@ -78,8 +79,18 @@ class RoomSavedArticlesTest {
             .also { opened += it }
     }
 
-    private fun kept(database: SavedArticlesDatabase) =
-        RoomSavedArticles(rows = database.saved(), clock = ticking())
+    private fun kept(database: SavedArticlesDatabase) = RoomSavedArticles(
+        rows = database.saved(),
+        clock = ticking(),
+        // No list from a previous version to bring over: what that does instead
+        // is ImportSavedArticlesTest's subject, not this one's.
+        importing = ImportSavedArticles(
+            file = File(folder.root, "no-list-was-left-here.json"),
+            rows = database.saved(),
+            clock = ticking(),
+            io = UnconfinedTestDispatcher(),
+        ),
+    )
 
     @Test
     fun `something saved elsewhere turns up in the list without it being asked`() = runTest {

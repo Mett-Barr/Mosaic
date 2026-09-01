@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
@@ -27,6 +29,7 @@ import moozy.mosaic.domain.repository.SavedArticles
 internal class RoomSavedArticles(
     private val rows: SavedArticleDao,
     private val clock: Clock,
+    private val importing: ImportSavedArticles,
 ) : SavedArticles {
 
     private val problem = MutableStateFlow<String?>(null)
@@ -47,18 +50,38 @@ internal class RoomSavedArticles(
      * for free. distinctUntilChanged buys that back, so "the interface behaves
      * as it did" needs no footnote.
      */
-    override val saved: Flow<List<ArticleItem>> =
-        rows.saved().map { it.readable() }.distinctUntilChanged()
+    override val saved: Flow<List<ArticleItem>> = flow {
+        ready()
+        emitAll(rows.saved().map { it.readable() })
+    }.distinctUntilChanged()
 
     override suspend fun save(article: ArticleItem) {
+        ready()
         quietly("this article could not be kept") {
             rows.save(article.row(savedAt = clock.now().toEpochMilli()))
         }
     }
 
     override suspend fun forget(id: ArticleId) {
+        ready()
         quietly("this article could not be forgotten") { rows.forget(id.value) }
     }
+
+    /**
+     * The list the previous version wrote is brought over on the way in, in the
+     * caller's own coroutine, rather than in a scope of its own (DECISIONS 21)
+     * or a database callback. So nothing is emitted before it has happened --
+     * there is no flash of an empty list followed by the restored one -- and it
+     * is cancelled with the screen that asked for it.
+     *
+     * save() waits for it too. In practice the read path always runs first,
+     * because DetailViewModel collects the list in its init; "in practice" is
+     * not a guarantee and this is one line.
+     */
+    private suspend fun ready() =
+        quietly("the list the previous version kept could not be brought over") {
+            importing.runOnce { problem.value = it }
+        }
 
     /**
      * The interface promises nothing here can fail, and it has to keep that
