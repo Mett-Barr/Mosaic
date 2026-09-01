@@ -2,6 +2,7 @@ package moozy.mosaic.feature.feed
 
 import app.cash.turbine.test
 import java.time.Instant
+import java.util.TimeZone
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,11 +40,69 @@ class FeedViewModelTest {
 
     private val dispatcher = UnconfinedTestDispatcher()
 
+    private lateinit var deviceZone: TimeZone
+
     @Before
-    fun useTestDispatcher() = Dispatchers.setMain(dispatcher)
+    fun useTestDispatcher() {
+        Dispatchers.setMain(dispatcher)
+        // The times this screen shows are the reader's own, so a test that
+        // asserts one has to say whose clock it is reading.
+        deviceZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Taipei"))
+    }
 
     @After
-    fun releaseDispatcher() = Dispatchers.resetMain()
+    fun releaseDispatcher() {
+        TimeZone.setDefault(deviceZone)
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `an article reaches the screen as words, not as a domain object`() = runTest {
+        val feed = feedOf(ArticlesResult.Loaded(listOf(article(1)), next = null))
+
+        feed.state.test {
+            val row = (awaitItem() as FeedUiState.Content).articles.single()
+
+            assertEquals("Article 1", row.title)
+            // One string, because it is one line on the card -- and because
+            // deciding how a time reads is not a decision a composable can be
+            // asked about without a device.
+            assertEquals("Somewhere · 31 Aug, 18:00", row.attribution)
+        }
+    }
+
+    @Test
+    fun `the weather reaches the screen as words too`() = runTest {
+        val feed = FeedViewModel(
+            FakeArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)),
+            FakeWeather(WeatherResult.Loaded(weather())),
+        )
+
+        feed.state.test {
+            var shown: WeatherHeadline? = null
+            while (shown == null) {
+                val next = awaitItem()
+                if (next is FeedUiState.Content) shown = next.weather
+            }
+
+            assertEquals("Taipei", shown.place)
+            assertEquals("26°", shown.temperature)
+            assertEquals("Cloudy · 32° / 25°", shown.conditions)
+        }
+    }
+
+    @Test
+    fun `a failure reaches the screen as something a reader can read`() = runTest {
+        val feed = feedOf(ArticlesResult.Failed(FeedFailure.Server(500)))
+
+        feed.state.test {
+            val error = awaitItem() as FeedUiState.Error
+
+            assertEquals("Something went wrong.", error.message)
+            assertEquals("The feed is having trouble (error 500).", error.hint)
+        }
+    }
 
     @Test
     fun `it says it is loading before anything has arrived`() = runTest {
