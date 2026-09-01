@@ -195,7 +195,6 @@ Assisted-by: LLM Claude Code
 一份寫了卻沒在跑的規則比沒有規則更糟——它讓讀者無法判斷 history 裡哪些是真的。
 
 **篇幅上限 200 行**（[官方建議](https://code.claude.com/docs/en/best-practices)的
-*"target under 200 lines"*）。更關鍵的依據是
-[arXiv:2602.11988](https://arxiv.org/abs/2602.11988)：context file **平均不提升任務
-成功率，卻讓推理成本增加 20% 以上**——agent 是忠實遵守而非忽略這些指令，多餘的內容
-讓它擴大探索。新增一條規則前先問：**拿掉它會讓 agent 犯錯嗎？** 不會就別加。
+*"target under 200 lines"*）。更關鍵的依據是 [arXiv:2602.11988](https://arxiv.org/abs/2602.11988)：
+context file **平均不提升任務成功率，卻讓推理成本增加 20% 以上**——agent 是忠實遵守而非
+忽略這些指令，多餘的內容讓它擴大探索。新增一條前先問：**拿掉它會讓 agent 犯錯嗎？**
