@@ -1,6 +1,8 @@
 package moozy.mosaic.data.article
 
 import java.time.Instant
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
@@ -24,6 +26,75 @@ class ArticlesWithAFallbackTest {
 
     private fun caching(network: ArticleRepository, cache: FakeCache = FakeCache()) =
         ArticlesWithAFallback(network = network, cache = cache)
+
+    @Test
+    fun `the page already here is given at once, and a newer one is sent for`() = runTest {
+        val cache = FakeCache()
+        cache.write(CachedArticles(listOf(article(1)), next = null))
+        val network = CountingArticles(ArticlesResult.Loaded(listOf(article(2)), next = null))
+        val caching = caching(network, cache)
+
+        val page = caching.firstPage()
+
+        // Cold start is the process having been killed: nothing is in memory, but
+        // the list is on disk. It goes on screen now; the newer one arrives as a
+        // second generation rather than as a wait.
+        assertEquals(listOf("1"), (page as ArticlesResult.Loaded).articles.map { it.id.value })
+        runCurrent()
+        assertEquals("and somebody went to look for a newer one", 1, network.calls)
+    }
+
+    @Test
+    fun `with nothing here it waits for the network rather than saying there is nothing`() = runTest {
+        val network = CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null))
+
+        val page = caching(network).firstPage()
+
+        assertEquals(listOf("1"), (page as ArticlesResult.Loaded).articles.map { it.id.value })
+        assertEquals(1, network.calls)
+    }
+
+    @Test
+    fun `asking for a newer page writes it down`() = runTest {
+        val cache = FakeCache()
+        val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(2)), next = null)), cache)
+
+        caching.refreshFirstPage()
+
+        assertEquals(listOf("2"), cache.stored?.articles?.map { it.id.value })
+    }
+
+    @Test
+    fun `replacing a page that was already here says so`() = runTest {
+        val cache = FakeCache()
+        cache.write(CachedArticles(listOf(article(1)), next = null))
+        val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(2)), next = null)), cache)
+
+        val said = mutableListOf<Unit>()
+        val watching = launch { caching.changed.collect { said += it } }
+        runCurrent()
+        caching.refreshFirstPage()
+        runCurrent()
+        watching.cancel()
+
+        assertEquals("whoever is showing the old one needs to know", 1, said.size)
+    }
+
+    @Test
+    fun `arriving where there was nothing does not say anything changed`() = runTest {
+        val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null)))
+
+        val said = mutableListOf<Unit>()
+        val watching = launch { caching.changed.collect { said += it } }
+        runCurrent()
+        caching.refreshFirstPage()
+        runCurrent()
+        watching.cancel()
+
+        // Nobody was shown the old one, because there was no old one. Saying it
+        // changed would ask the screen to redraw what it is already drawing.
+        assertEquals(emptyList<Unit>(), said)
+    }
 
     @Test
     fun `every ask for the first page goes to the network`() = runTest {
