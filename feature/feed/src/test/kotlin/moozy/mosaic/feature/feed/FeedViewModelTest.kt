@@ -59,6 +59,31 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `coming back to the screen asks the weather again`() = runTest {
+        val weather = CountingWeather(WeatherResult.Loaded(weather()))
+        val feed = FeedViewModel(FakeArticles(ArticlesResult.Loaded(listOf(article(1)), null)), weather)
+        yield()
+        assertEquals(1, weather.asked)
+
+        feed.shown()
+
+        // Free when it is not due -- the repository holds the policy, so the
+        // screen does not need to know whether it is time.
+        assertEquals("nothing asks, nothing updates", 2, weather.asked)
+    }
+
+    @Test
+    fun `pulling the list down asks the weather again too`() = runTest {
+        val weather = CountingWeather(WeatherResult.Loaded(weather()))
+        val feed = FeedViewModel(FakeArticles(ArticlesResult.Loaded(listOf(article(1)), null)), weather)
+        yield()
+
+        feed.refresh()
+
+        assertEquals("a reader who pulls down is asking about all of it", 2, weather.asked)
+    }
+
+    @Test
     fun `an article reaches the screen as words, not as a domain object`() = runTest {
         val feed = feedOf(ArticlesResult.Loaded(listOf(article(1)), next = null))
 
@@ -484,6 +509,17 @@ class FeedViewModelTest {
         measuredAt = Instant.parse("2026-09-01T02:30:00Z"),
         stepsEvery = Duration.ofMinutes(15),
     )
+
+    private class CountingWeather(private val result: WeatherResult) : WeatherRepository {
+        var asked = 0
+            private set
+
+        override suspend fun current(): WeatherResult {
+            asked++
+            yield()
+            return result
+        }
+    }
 
     private class FakeWeather(private val result: WeatherResult) : WeatherRepository {
         override suspend fun current(): WeatherResult {
