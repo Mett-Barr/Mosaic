@@ -409,3 +409,82 @@ repository（那是資料的狀態），兩者不衝突。
 丟的是這個嗎」。六個測試寫下去全紅。**這就是用第二個模型的理由**——同一個模型再讀一次，
 會再確認一次自己寫下的假設。
 
+## 19. DI 用 Hilt，而 `:core:domain` 一個註解都沒有
+
+**選了** —— Hilt（`@Module` / `@Provides` / `@HiltViewModel`），所有繫結集中在
+`:core:data` 的一個 `DataModule`，`:app` 只負責套用主題與 `@HiltAndroidApp`。
+
+**當時還考慮**
+
+- **完全手寫的建構子注入 + 一個 composition root。** 這個規模其實夠用，而且零建置成本。
+  放棄的原因是 ViewModel：Android 自己會建立它們，手寫就得寫一個 `ViewModelProvider.Factory`
+  再自己把相依性接進去——那段樣板正好就是 Hilt 存在的理由。
+- **Koin。** 設定簡單，但繫結錯誤要**跑到那一行**才會炸。Hilt 在編譯期就檢查完整張圖，
+  而這個專案的核心主張是「gate 綠才算完成」——把錯誤往編譯期推是同一個方向。
+
+**取捨** —— KSP 讓建置變慢，而且產生的程式碼在 stack trace 裡很吵。換到的是
+「相依圖不完整就編不過」。
+
+**`:core:domain` 保持乾淨** —— 它是純 Kotlin 模組，**沒有 Hilt、沒有 `javax.inject`**。
+domain 不該知道有人在幫它組裝。這也是它能用純 JVM 測試的原因之一。
+
+**dispatcher 也走注入** —— `Dispatchers.IO` 只出現在 `DataModule` 裡三次，
+三個檔案存放器收的都是建構子參數 `io: CoroutineDispatcher`。測試因此能塞
+`UnconfinedTestDispatcher` 進去，不需要任何 dispatcher 的全域替換。
+
+---
+
+## 20. Compose，而且畫面狀態只有一個入口
+
+**選了** —— 全 Compose，沒有任何 XML layout、沒有 `Fragment`。Material 3。
+
+**為什麼不是 Views** —— 這個 app 的整個 UI 是「一個狀態物件 → 一個畫面」。
+Views 要處理的是「從 A 狀態變成 B 狀態要改哪幾個 view」，而那正是
+`FeedUiState` 有五個型別（`DECISIONS.md` 10）之後不必再處理的事。
+另外 Navigation 3 只有 Compose 版本，選了它就不再有選擇。
+
+**當時還考慮**
+
+- **Views + ViewBinding。** 成熟、工具鏈穩、`RecyclerView` 的差異更新久經考驗。
+  放棄是因為異質 feed：`RecyclerView` 要 view type、要 `ViewHolder`、要 `DiffUtil`，
+  而 `LazyColumn` 裡那是 `item { }` 和 `items() { }` 兩行。
+- **混合（Compose 包在 Fragment 裡）。** 只有在既有專案裡才划算，這裡是全新的。
+
+**取捨（而且是真的痛）** —— **Compose 的畫面測不到**，除非上裝置或引入 Robolectric。
+Views 至少還能用 JVM 測 presenter 對 view 介面的呼叫。這就是為什麼這個專案的
+138 個測試沒有一個碰到 composable，也是 `AI_USAGE.md` 裡第二個模型連續指出的
+最弱一環。**這個代價是選 Compose 換來的，寫在這裡才誠實。**
+
+---
+
+## 21. 並行：suspend 一路到底，沒有 scope 是自己開的
+
+**選了** —— 結構化並行。三條規則：
+
+1. **repository 全部是 `suspend`**，沒有回傳 `Flow` 的請求、沒有 callback、沒有 RxJava。
+   唯一的 `Flow` 是 `SavedArticles.saved`，因為那真的是一個會變動的清單。
+2. **只有 `viewModelScope`。** 沒有 `GlobalScope`，沒有自己建的 `CoroutineScope`。
+   畫面消失時，還在飛的請求跟著被取消——這是預設行為而不是要記得寫的收尾。
+3. **`Dispatchers.IO` 只出現在檔案邊界**，而且是注入的（見 #19）。
+   網路不需要切 dispatcher：Ktor 的 `suspend` 本來就不佔執行緒。
+
+**`CancellationException` 一定要重新丟出** —— 三個 repository 的 catch 鏈第一條都是
+`catch (cancelled: CancellationException) { throw cancelled }`。這是
+`catch (e: Exception)` 在 coroutine 裡最容易犯的錯：吞掉取消訊號，
+畫面已經走了，工作還在跑。
+
+**寫入用 `Mutex` 串起來** —— `FileSavedArticles` 的每次 save／forget 是
+「讀檔 → 改 → 寫檔」，兩個同時發生會互相覆蓋。用 `Mutex` 而不是 `synchronized`，
+因為中間那段是 `suspend`——`synchronized` 區塊裡不能掛起。
+
+**當時還考慮**
+
+- **repository 回傳 `Flow<ArticlesResult>`。** 讓快取先發、網路後發是很漂亮的模型，
+  但分頁的「載入下一頁」是一次性的問題，用串流表達會讓「這一次要不要強制重抓」
+  變成串流的參數，比 `suspend fun articles(force: Boolean)` 難讀得多。
+- **在 repository 裡開自己的 scope 做背景更新。** 那會讓「誰在等這個結果」變得不明確，
+  而取消就再也不是免費的了。
+
+**取捨** —— 畫面消失時請求一定被取消，包括那些「反正快好了」的。
+代價是讀者切出去再切回來可能要重抓一次；換到的是沒有任何工作能活得比它的畫面久。
+
