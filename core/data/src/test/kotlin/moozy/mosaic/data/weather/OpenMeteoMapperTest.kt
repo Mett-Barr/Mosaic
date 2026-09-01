@@ -74,7 +74,7 @@ class OpenMeteoMapperTest {
         val weather = map(
             """
             {"utc_offset_seconds": 0, "timezone": "UTC",
-             "current": {"time": "2026-12-24T18:45", "temperature_2m": -7.4, "weather_code": 73},
+             "current": {"interval": 900, "time": "2026-12-24T18:45", "temperature_2m": -7.4, "weather_code": 73},
              "daily": {"temperature_2m_max": [-2.1], "temperature_2m_min": [-11.8]}}
             """.trimIndent(),
         ).let { it }
@@ -91,7 +91,7 @@ class OpenMeteoMapperTest {
         val weather = map(
             """
             {"utc_offset_seconds": -28800, "timezone": "America/Los_Angeles",
-             "current": {"time": "2026-09-01T02:30", "temperature_2m": 18.0, "weather_code": 0},
+             "current": {"interval": 900, "time": "2026-09-01T02:30", "temperature_2m": 18.0, "weather_code": 0},
              "daily": {"temperature_2m_max": [24.0], "temperature_2m_min": [14.0]}}
             """.trimIndent(),
         )
@@ -102,7 +102,7 @@ class OpenMeteoMapperTest {
     private fun skyFor(code: Int) = map(
         """
         {"utc_offset_seconds": 28800, "timezone": "Asia/Taipei",
-         "current": {"time": "2026-09-01T02:30", "temperature_2m": 25.6, "weather_code": $code},
+         "current": {"interval": 900, "time": "2026-09-01T02:30", "temperature_2m": 25.6, "weather_code": $code},
          "daily": {"temperature_2m_max": [31.8], "temperature_2m_min": [25.4]}}
         """.trimIndent(),
     ).sky

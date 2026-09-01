@@ -3,6 +3,7 @@ package moozy.mosaic.data.weather
 import java.io.File
 import java.io.IOException
 import java.time.DateTimeException
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -104,7 +105,8 @@ private data class StoredWeather(
     val low: Int,
     val sky: String,
     @SerialName("measured_at") val measuredAt: String,
-    @SerialName("asked_at") val askedAt: String,
+    @SerialName("steps_every_seconds") val stepsEverySeconds: Long,
+    @SerialName("ask_again_at") val askAgainAt: String,
 )
 
 private fun CachedWeather.stored() = StoredWeather(
@@ -114,7 +116,8 @@ private fun CachedWeather.stored() = StoredWeather(
     low = weather.low,
     sky = weather.sky.name,
     measuredAt = weather.measuredAt.toString(),
-    askedAt = askedAt.toString(),
+    stepsEverySeconds = weather.stepsEvery.seconds,
+    askAgainAt = askAgainAt.toString(),
 )
 
 private fun StoredWeather.toCached() = CachedWeather(
@@ -125,6 +128,7 @@ private fun StoredWeather.toCached() = CachedWeather(
         low = low,
         sky = Sky.valueOf(sky),
         measuredAt = Instant.parse(measuredAt),
+        stepsEvery = Duration.ofSeconds(stepsEverySeconds),
     ),
-    askedAt = Instant.parse(askedAt),
+    askAgainAt = Instant.parse(askAgainAt),
 )

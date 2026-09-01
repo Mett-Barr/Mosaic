@@ -1,6 +1,7 @@
 package moozy.mosaic.feature.feed
 
 import app.cash.turbine.test
+import java.time.Duration
 import java.time.Instant
 import java.util.TimeZone
 import kotlinx.coroutines.CompletableDeferred
@@ -481,6 +482,7 @@ class FeedViewModelTest {
         low = 25,
         sky = Sky.CLOUDY,
         measuredAt = Instant.parse("2026-09-01T02:30:00Z"),
+        stepsEvery = Duration.ofMinutes(15),
     )
 
     private class FakeWeather(private val result: WeatherResult) : WeatherRepository {

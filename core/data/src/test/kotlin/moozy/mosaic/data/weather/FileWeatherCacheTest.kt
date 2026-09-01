@@ -1,6 +1,7 @@
 package moozy.mosaic.data.weather
 
 import java.io.File
+import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -29,13 +30,13 @@ class FileWeatherCacheTest {
     @Test
     fun `a reading written down is there for the next run`() = runTest {
         val file = folder.newFile("weather.json")
-        val takenAt = Instant.parse("2026-09-01T12:00:00Z")
+        val askAgainAt = Instant.parse("2026-09-01T12:15:00Z")
 
-        cache(file).write(CachedWeather(weather(), takenAt))
+        cache(file).write(CachedWeather(weather(), askAgainAt))
 
         val read = cache(file).read()
         assertEquals(weather(), read?.weather)
-        assertEquals(takenAt, read?.askedAt)
+        assertEquals(askAgainAt, read?.askAgainAt)
     }
 
     @Test
@@ -57,7 +58,8 @@ class FileWeatherCacheTest {
         // Valid JSON, and a day that is colder at its warmest than at its coldest.
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":10,"low":30,"sky":"CLOUDY",
-               "measured_at":"2026-09-01T02:30:00Z","asked_at":"2026-09-01T12:00:00Z"}"""
+               "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
+               "ask_again_at":"2026-09-01T12:15:00Z"}"""
                 .trimIndent(),
         )
 
@@ -69,7 +71,8 @@ class FileWeatherCacheTest {
         val file = folder.newFile("weather.json")
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
-               "measured_at":"the day before yesterday","asked_at":"2026-09-01T12:00:00Z"}"""
+               "measured_at":"the day before yesterday","steps_every_seconds":900,
+               "ask_again_at":"2026-09-01T12:15:00Z"}"""
                 .trimIndent(),
         )
 
@@ -77,11 +80,12 @@ class FileWeatherCacheTest {
     }
 
     @Test
-    fun `an unreadable moment of asking reads as nothing too`() = runTest {
+    fun `an unreadable moment to ask again reads as nothing too`() = runTest {
         val file = folder.newFile("weather.json")
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
-               "measured_at":"2026-09-01T02:30:00Z","asked_at":"soon"}"""
+               "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
+               "ask_again_at":"soon"}"""
                 .trimIndent(),
         )
 
@@ -95,5 +99,6 @@ class FileWeatherCacheTest {
         low = 25,
         sky = Sky.CLOUDY,
         measuredAt = Instant.parse("2026-09-01T02:30:00Z"),
+        stepsEvery = Duration.ofMinutes(15),
     )
 }
