@@ -78,10 +78,10 @@ private fun Mosaic() {
             entry<FeedKey> {
                 Screen(
                     title = "Mosaic",
-                    action = { TextButton(onClick = { backStack.add(SavedKey) }) { Text("Saved") } },
+                    action = { TextButton(onClick = { backStack.goTo(SavedKey) }) { Text("Saved") } },
                 ) { padding ->
                     FeedRoute(
-                        onOpenArticle = { id -> backStack.add(ArticleKey(id.value)) },
+                        onOpenArticle = { id -> backStack.goTo(ArticleKey(id.value)) },
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -89,7 +89,7 @@ private fun Mosaic() {
             entry<SavedKey> {
                 Screen(title = "Saved", onBack = { backStack.removeLastOrNull() }) { padding ->
                     SavedRoute(
-                        onOpenArticle = { id -> backStack.add(ArticleKey(id.value)) },
+                        onOpenArticle = { id -> backStack.goTo(ArticleKey(id.value)) },
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -105,6 +105,18 @@ private fun Mosaic() {
             }
         },
     )
+}
+
+/**
+ * Go somewhere, unless the reader is already going there.
+ *
+ * Two taps land before the first screen has drawn, and both are handled. Without
+ * this the reader arrives at the same article twice and has to press back twice
+ * to leave it once -- the second press looking, from where they are, like it did
+ * nothing at all.
+ */
+private fun MutableList<NavKey>.goTo(key: NavKey) {
+    if (lastOrNull() != key) add(key)
 }
 
 /**
