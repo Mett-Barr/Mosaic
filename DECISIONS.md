@@ -645,3 +645,82 @@ val state = combine(_state, weather.current) { feed, sky ->
 
 **代價** —— 系統回收程序後切回來會重抓一次。這是刻意接受的。
 
+
+## 26. 閱讀清單改成一張表，因為當初不選 Room 的那個理由已經被量掉了
+
+**選了** —— `:core:data` 的 `RoomSavedArticles`：一張 `saved_articles` 表、一個
+`SavedArticleDao` 的可觀察查詢，外加一次性的 `ImportSavedArticles`——把舊的
+`saved-articles.json` 讀進來就把它放掉。**`SavedArticles` 這個介面一個字都沒改**，
+`SavedViewModel`、`DetailViewModel` 與它們兩個 `FakeSaved` 一行都沒動。
+第 12 則寫過「換掉的成本是這個檔案，不是呼叫端」——這個 commit 是驗證那句話的機會，它成立。
+
+**這一則取代第 12 則的結論，但不改寫它。** 12 則拒絕 Room 只給了一個理由，而且講得很精確：
+「Room 的記憶體資料庫需要 Android context，這個專案沒有 Robolectric，所以 DAO 的行為在 JVM 上
+測不到；用 Room 等於加一個沒有測試的持久層」。所以這裡要說的**不是「Room 後來比較好」，
+而是「當初讓它不對的那件事現在不成立了」**——Robolectric 進了 `:core:data` 的 test classpath，
+18 個資料庫層的測試在純 JVM 上跑得起來。12 則原文保留，history 是交付物。
+
+**沒有做的：遠端資料來源。** 官方 offline-first 的形狀是「本機 ＋ 遠端 ＋ 一個決定用哪個的
+repository」，那個形狀存在是為了**調解**：遠端是權威、本機是它的快取，兩邊會不一致。
+這裡三個前提都不成立——SNAPI 沒有帳號、沒有認證、沒有「這個讀者存了什麼」這種端點。
+所以本機不是快取，它就是**紀錄本身**，沒有東西要調解、沒有衝突規則要挑、沒有版本要追。
+`RemoteSavedArticles` 只會有一個誠實的實作（什麼都不回、什麼都不收），
+而 repository 那個 `when` 的另一條分支存在的唯一功能是讓一張架構圖成立。
+
+唯一不算蠢的遠端工作是「線上時把存下來的那份重抓一次」，它同樣不需要：第 23 則已經量過
+同一篇文章 3.5 小時後六個顯示欄位完全相同；而且 `DetailViewModel` 本來就先問
+`articles.article(id)`、失敗才退回存下來的那份——**存下來的那份只在網路答不出來的時候被顯示**，
+那正好是重抓不可能發生的那一刻。
+
+**三件量出來的事（不是推論）**
+
+| 問題 | 實測 |
+|---|---|
+| Room 的 `Flow` 在 Robolectric 下會不會重發 | **會。**但必須用 `setQueryCoroutineContext` 把 `runTest` 的 scheduler 交給 Room——用 Room 自己的 executor 時重發走真的背景執行緒，`runTest` 的虛擬時鐘不會等它 |
+| 那個 dispatcher 可不可以是 `UnconfinedTestDispatcher` | **不行。**Room 會對它呼叫 `limitedParallelism`，那個型別回 `UnsupportedOperationException`。必須是 `StandardTestDispatcher` |
+| 寫入失敗丟什麼 | 關掉資料庫丟的是 `JobCancellationException`——它是 `CancellationException`，依第 21 則必須重丟，**所以「關掉資料庫」根本觸發不到那個分支**。真正的 SQL 失敗丟 `android.database.sqlite.SQLiteException`，不是 `androidx.sqlite` 的那個 |
+
+第三列正是第 18 則那個錯誤的形狀，所以這次的順序是：先寫測試、讀 stack trace、再寫 catch。
+
+**不會再發生的事**（不是承諾，是理由）——寫到一半的檔案（SQLite 的寫入路徑是交易式的，
+`.writing` 加 rename 那套沒了）；一個壞位元組賠掉整份清單（文件要整份能解析，表不用）；
+讀不回來的時間戳（`published_at` 存 epoch 毫秒，而 `Instant.ofEpochMilli` 在 `Long` 上是全函數，
+所以第 18 則那個分支不是「不太可能」，是**到不了**，該刪而不是留著當裝飾）；
+以及建構子裡那次同步讀檔（Room 的 `Flow` 是冷的，沒人收就不碰磁碟）。
+**還有那面手動維護的鏡子**：檔案版有一條「任何成功的寫入都要順便指派 `articles.value`」的規則，
+它成立是因為有人記得。第 24 則記的正是有人忘記的後果。現在那條規則不存在了。
+
+**`saved_at` 是檔案不需要的那一欄** —— JSON 陣列有順序，SQL 的表是集合，而
+`SavedArticles` 的 KDoc 寫著「最近存的在最前面」，所以順序必須變成資料。
+`ORDER BY saved_at DESC, id DESC`：兩次點擊不會落在同一毫秒，但測試迴圈裡的三次會，
+而順序取決於 SQLite 未定義的平手規則的測試，會在別人的機器上壞掉。
+
+**當時還考慮**
+
+- **`@Upsert`**（Room 2.5+，UPDATE-then-INSERT，保留 rowid、不觸發 delete trigger）。
+  這裡沒有 trigger、沒有外鍵、沒有人引用 rowid，所以它什麼都沒買到，而 `INSERT OR REPLACE`
+  才是測試名字在描述的那件事。值得寫下來的是：**第二張表指過來的那天這個選擇就重要了**——
+  `REPLACE` 會沿著外鍵串連刪除。
+- **自動遞增的 `Long` 主鍵。** `ArticleId` 已經是整個 app 的文章身分（第 5 則），
+  每個呼叫端都拿它當 key；合成主鍵等於多一個身分，再加一次翻譯。
+- **`.fallbackToDestructiveMigration()`。** 版本 1 沒有東西可以退回，現在加等於預先授權
+  某次版本升級時安靜刪掉讀者的清單——那正是第 12 則花一段在反對的事。
+- **叫 `MosaicDatabase` 或 `AppDatabase`。** 第 14 則的同一條理由。真到了加第二張表那天，
+  那是 `@Database(entities = [...])` 一行加一次 migration，只有名字讀起來怪；
+  **名字晚點讀起來怪，比名字現在讀起來模糊便宜。**
+- **把舊檔案直接丟掉。** app 沒上架過，整個安裝基數就是開發者自己的測試機，三下就能重建。
+  但這是整個變更裡**唯一會掉資料**的地方，而第 12 則反對的正是這種安靜的損失。
+  何況便宜的那個選項跟不會掉東西的那個選項是同一個：一次 `readText`、一次 `mapNotNull`、
+  一個 `INSERT`、一次 `delete`。成功刪檔、解不開改名成 `.unreadable`——
+  **成功時多一份是雜訊，失敗時那些位元組是唯一的證據。**
+
+**代價**
+
+- 多一個相依，測試變慢（Robolectric 每個 test class 開一次 sandbox）
+- `saved_at` 是檔案不需要的一欄
+- `published_at` 存 epoch 毫秒，比毫秒細的精度會被截掉。repo 裡每一個 fixture 都是秒精度，
+  但「SNAPI 永遠不送更細的」**沒有被驗證過**
+- **磁碟滿與真正的資料庫毀損現在測不到。** 檔案版還能靠占住那個路徑假造第一種，SQLite 沒有
+  對應的縫。寫進 README 的延後表，而不是假裝它被涵蓋了
+- 這個功能大概只用到 Room 的五分之一。**為了「用資料庫」不值得換；為了那個可觀察的查詢
+  與交易式的寫入才值得**

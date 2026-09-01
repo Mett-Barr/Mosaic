@@ -178,7 +178,7 @@ class :app android-application
 |---|---|
 | 分頁載入 | ✅ 跟隨伺服器給的 `next` 連結，捲到底前三項自動載入，失敗後**不**自動重試 |
 | detail 畫面 | ✅ |
-| save／unsave | ✅ 存成一個 JSON 檔（`DECISIONS.md` 12） |
+| save／unsave | ✅ 存成 Room 的一張表，清單是一個可觀察的查詢；上一版的 JSON 檔開一次就匯進來（`DECISIONS.md` 26 取代 12） |
 | 存起來的可離線閱讀 | ✅ 網路失敗時改用存下來的那一份 |
 | 異質 feed（第二種來源） | ✅ Open-Meteo 的天氣，同一個清單裡形狀明顯不同的一張卡 |
 | freshness policy | ✅ 天氣跟來源的格線；文章開 app 抓一次、下拉抓一次；失敗時用寫下的那頁 |
@@ -195,6 +195,7 @@ class :app android-application
 | 自動重試 | 作業要求不浪費行動網路，而重試做錯正是最快的浪費方式 | 有遙測能證明它值得之後 |
 | base URL 設定化 | 只有一個公開 endpoint，注入設定現在只會增加樣板 | 有第二個環境時 |
 | 被丟掉的資料列要報給誰 | 原因已經帶回呼叫端，但只有數量被用到 | 有遙測或 log 的去處之後 |
+| 磁碟滿與資料庫毀損這兩條路徑 | JVM 測試裡沒有能觸發它們的縫——檔案版還能靠占住寫入路徑假造第一種，SQLite 沒有對應的做法（`DECISIONS.md` 26） | 有裝置上的測試，或 SQLite driver 變成可注入之後 |
 | 畫面的自動化測試 | Compose 測試需要裝置或 Robolectric，兩者都還沒有；寫一個從未執行過的測試不算證據 | 接上 `connectedDebugAndroidTest` 或 Robolectric 之後 |
 | 搜尋／過濾、轉場動畫、第三種來源 | 都是 nice-to-have。必備項目與它們的可驗證性優先 | 必備全部在裝置上驗過之後 |
 
