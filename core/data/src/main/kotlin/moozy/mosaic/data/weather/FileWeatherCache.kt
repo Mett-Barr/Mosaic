@@ -1,0 +1,111 @@
+package moozy.mosaic.data.weather
+
+import java.io.File
+import java.io.IOException
+import java.time.Instant
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import moozy.mosaic.domain.model.Sky
+import moozy.mosaic.domain.model.Weather
+
+/**
+ * The last reading, written down.
+ *
+ * One small file read whole and written whole, the same shape as the article
+ * cache and the saved list. Losing it costs one request, so a file that will not
+ * parse reads as nothing at all and the next reading writes over it.
+ */
+internal class FileWeatherCache(
+    private val file: File,
+    private val io: CoroutineDispatcher,
+) : WeatherCache {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Why the reading could not be read back, if it could not be.
+     *
+     * Nothing is shown to the reader about it -- a lost reading costs one
+     * request. Keeping the reason still beats discarding it: a cache that never
+     * loads makes every launch pay, and that is worth being able to find out.
+     */
+    internal var lastProblem: String? = null
+        private set
+
+    override suspend fun read(): CachedWeather? = withContext(io) {
+        try {
+            file.takeIf { it.exists() }
+                ?.readText()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { json.decodeFromString(StoredWeather.serializer(), it) }
+                ?.toCached()
+        } catch (refused: IllegalArgumentException) {
+            // Valid JSON the domain will not hold: a sky nobody has heard of, a
+            // day colder at its warmest than at its coldest. Parsing worked, so
+            // the catch below never sees these, and a cache must not be a way to
+            // smuggle past the constructor.
+            lastProblem = "the stored reading held values this app cannot use: ${refused.message}"
+            file.delete()
+            null
+        } catch (unreadable: SerializationException) {
+            lastProblem = "the stored reading could not be read: ${unreadable.message}"
+            file.delete()
+            null
+        } catch (unreachable: IOException) {
+            lastProblem = "the stored reading could not be opened: ${unreachable.message}"
+            null
+        }
+    }
+
+    /**
+     * Best effort, like the article cache. A reading that arrived must reach the
+     * reader whether or not it can also be written down.
+     */
+    override suspend fun write(weather: CachedWeather) {
+        withContext(io) {
+            try {
+                file.parentFile?.mkdirs()
+                file.writeText(json.encodeToString(StoredWeather.serializer(), weather.stored()))
+            } catch (unwritable: IOException) {
+                lastProblem = "the reading could not be written down: ${unwritable.message}"
+            }
+        }
+    }
+}
+
+@Serializable
+private data class StoredWeather(
+    val place: String,
+    val temperature: Int,
+    val high: Int,
+    val low: Int,
+    val sky: String,
+    @SerialName("measured_at") val measuredAt: String,
+    @SerialName("asked_at") val askedAt: String,
+)
+
+private fun CachedWeather.stored() = StoredWeather(
+    place = weather.place,
+    temperature = weather.temperature,
+    high = weather.high,
+    low = weather.low,
+    sky = weather.sky.name,
+    measuredAt = weather.measuredAt.toString(),
+    askedAt = askedAt.toString(),
+)
+
+private fun StoredWeather.toCached() = CachedWeather(
+    weather = Weather(
+        place = place,
+        temperature = temperature,
+        high = high,
+        low = low,
+        sky = Sky.valueOf(sky),
+        measuredAt = Instant.parse(measuredAt),
+    ),
+    askedAt = Instant.parse(askedAt),
+)

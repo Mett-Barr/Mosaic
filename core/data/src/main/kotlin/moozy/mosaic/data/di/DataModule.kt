@@ -20,6 +20,7 @@ import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.FileSavedArticles
+import moozy.mosaic.data.weather.FileWeatherCache
 import moozy.mosaic.data.weather.OpenMeteoWeather
 import moozy.mosaic.data.weather.Place
 import moozy.mosaic.data.weather.openMeteoClient
@@ -85,6 +86,7 @@ internal object DataModule {
             place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
             clock = Clock { Instant.now() },
             dataCost = DataCost { context.isOnMeteredConnection() },
+            cache = FileWeatherCache(File(context.filesDir, "weather.json"), Dispatchers.IO),
         )
 
     /**

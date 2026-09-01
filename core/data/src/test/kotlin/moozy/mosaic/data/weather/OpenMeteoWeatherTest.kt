@@ -27,12 +27,14 @@ class OpenMeteoWeatherTest {
     private val requests = mutableListOf<HttpRequestData>()
     private var now: Instant = Instant.parse("2026-09-01T12:00:00Z")
     private var metered = false
+    private val cache = RememberedInMemory()
 
     private fun weather(engine: MockEngine) = OpenMeteoWeather(
         client = openMeteoClient(engine),
         place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
         clock = { now },
         dataCost = { metered },
+        cache = cache,
     )
 
     private fun answering(body: String) = weather(
@@ -138,5 +140,32 @@ class OpenMeteoWeatherTest {
         weather.current()
 
         assertEquals("a failure is not a reading worth keeping", 2, attempts)
+    }
+
+    @Test
+    fun `a reading from the last run is used instead of a request`() = runTest {
+        val engine = MockEngine { request ->
+            requests += request
+            respond(forecast, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        weather(engine).current()
+        assertEquals(1, requests.size)
+
+        // A new instance, as after the system reclaimed the app, sharing only
+        // what was written down.
+        now = now.plusSeconds(60)
+        val reading = weather(engine).current()
+
+        assertEquals(1, requests.size)
+        assertTrue(reading is WeatherResult.Loaded)
+    }
+}
+
+/** Enough of a cache to test against: it keeps what it is given, and no file. */
+private class RememberedInMemory : WeatherCache {
+    private var held: CachedWeather? = null
+    override suspend fun read(): CachedWeather? = held
+    override suspend fun write(weather: CachedWeather) {
+        held = weather
     }
 }
