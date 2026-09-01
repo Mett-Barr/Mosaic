@@ -10,6 +10,7 @@ import io.ktor.client.request.parameter
 import kotlinx.serialization.json.JsonElement
 import io.ktor.serialization.kotlinx.json.json
 import moozy.mosaic.domain.model.ArticleItem
+import moozy.mosaic.domain.model.Clock
 
 /**
  * One window of the article list: what it contained, where the server says the
@@ -55,11 +56,20 @@ internal fun spaceflightNewsClient(engine: HttpClientEngine): HttpClient = HttpC
 /**
  * Reads windows of the article list.
  *
- * The first window is asked for by size; every window after it is asked for by
- * following [ArticlePage.next], which is why [articles] takes a link rather than
- * an offset.
+ * The first window is asked for by size and by a moment; every window after it is
+ * asked for by following [ArticlePage.next], which is why [articles] takes a link
+ * rather than an offset.
+ *
+ * The moment is what makes the offsets in those links mean anything. Articles are
+ * published while somebody reads, and an unfiltered list shifts down under them:
+ * the link that said "start at 20" was written about a list that no longer has
+ * the same thing at 20. `published_at_lte` freezes what is being counted, and the
+ * server carries the filter into every link it generates from there.
  */
-internal class SpaceflightNewsApi(private val client: HttpClient) {
+internal class SpaceflightNewsApi(
+    private val client: HttpClient,
+    private val clock: Clock,
+) {
 
     suspend fun articles(limit: Int, after: String? = null): ArticlePage {
         // A cursor handed in gets the same look as one handed back: it may have
@@ -67,9 +77,13 @@ internal class SpaceflightNewsApi(private val client: HttpClient) {
         // response it came from is any reason to trust it.
         val target = after?.takeIf { it.continuesTheArticleList() }
         val page: ArticlePageDto = client.get(target ?: ARTICLES_URL) {
-            // The server's link already carries the window it means; adding our
-            // own parameters to it would be second-guessing it.
-            if (target == null) parameter("limit", limit)
+            // The server's link already carries the window it means -- including
+            // the moment it was pinned to -- so adding our own parameters to it
+            // would be second-guessing it.
+            if (target == null) {
+                parameter("limit", limit)
+                parameter("published_at_lte", clock.now())
+            }
         }.body()
         val mapped = page.toArticles()
         return ArticlePage(

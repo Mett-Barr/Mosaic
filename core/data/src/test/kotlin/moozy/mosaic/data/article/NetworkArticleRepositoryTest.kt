@@ -10,10 +10,12 @@ import io.ktor.http.headersOf
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.domain.model.ArticlesResult
+import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
 import org.junit.Assert.assertEquals
@@ -33,7 +35,7 @@ class NetworkArticleRepositoryTest {
     private val requests = mutableListOf<HttpRequestData>()
 
     private fun repositoryWith(engine: MockEngine) =
-        NetworkArticleRepository(SpaceflightNewsApi(spaceflightNewsClient(engine)))
+        NetworkArticleRepository(SpaceflightNewsApi(spaceflightNewsClient(engine), Clock { NOW }))
 
     private fun repositoryReturning(body: String) = repositoryWith(
         MockEngine { request ->
@@ -156,5 +158,10 @@ class NetworkArticleRepositoryTest {
     private fun assertFailed(result: ArticlesResult): FeedFailure {
         assertTrue("expected a failure, got $result", result is ArticlesResult.Failed)
         return (result as ArticlesResult.Failed).reason
+    }
+
+    private companion object {
+        /** The window these tests read is pinned here; none of them care when. */
+        val NOW: Instant = Instant.parse("2026-09-01T09:00:00Z")
     }
 }

@@ -8,6 +8,7 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,9 +25,11 @@ import org.junit.Test
 class SpaceflightNewsApiTest {
 
     private val requests = mutableListOf<HttpRequestData>()
+    private var now: Instant = Instant.parse("2026-09-01T09:00:00Z")
 
     private fun apiReturning(vararg bodies: String) = SpaceflightNewsApi(
-        spaceflightNewsClient(
+        clock = { now },
+        client = spaceflightNewsClient(
             MockEngine { request ->
                 requests += request
                 respond(
@@ -46,13 +49,41 @@ class SpaceflightNewsApiTest {
             "news_site": "Somewhere", "published_at": "2026-08-31T10:00:00Z"}"""
 
     @Test
-    fun `the first window is asked for by size`() = runTest {
+    fun `the first window is asked for by size, and pinned to a moment`() = runTest {
         apiReturning(page("null", row(1))).articles(limit = 20)
 
         val url = requests.single().url
         assertEquals("api.spaceflightnewsapi.net", url.host)
         assertEquals("/v4/articles/", url.encodedPath)
         assertEquals("20", url.parameters["limit"])
+        // Without this the list is a moving target: articles are published while
+        // somebody reads, everything below shifts down, and the offsets in the
+        // server's own next link stop pointing where they did.
+        assertEquals("2026-09-01T09:00:00Z", url.parameters["published_at_lte"])
+    }
+
+    @Test
+    fun `a later window is not pinned again, because the link it follows already is`() = runTest {
+        val serverLink = "https://api.spaceflightnewsapi.net/v4/articles/" +
+            "?limit=20&offset=20&published_at_lte=2026-09-01T09%3A00%3A00Z"
+
+        apiReturning(page("null", row(2))).articles(limit = 20, after = serverLink)
+
+        val followed = requests.single().url
+        assertEquals("20", followed.parameters["offset"])
+        assertEquals("2026-09-01T09:00:00Z", followed.parameters["published_at_lte"])
+    }
+
+    @Test
+    fun `each fresh ask pins a new moment`() = runTest {
+        val api = apiReturning(page("null", row(1)), page("null", row(2)))
+
+        api.articles(limit = 20)
+        now = Instant.parse("2026-09-01T10:30:00Z")
+        api.articles(limit = 20)
+
+        assertEquals("2026-09-01T09:00:00Z", requests.first().url.parameters["published_at_lte"])
+        assertEquals("2026-09-01T10:30:00Z", requests.last().url.parameters["published_at_lte"])
     }
 
     @Test
@@ -111,7 +142,8 @@ class SpaceflightNewsApiTest {
     @Test
     fun `a server error reaches the caller instead of looking like an empty feed`() = runTest {
         val api = SpaceflightNewsApi(
-            spaceflightNewsClient(MockEngine { respondError(HttpStatusCode.InternalServerError) }),
+            clock = { now },
+            client = spaceflightNewsClient(MockEngine { respondError(HttpStatusCode.InternalServerError) }),
         )
 
         val thrown = runCatching { api.articles(limit = 20) }.exceptionOrNull()
