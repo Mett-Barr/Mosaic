@@ -683,3 +683,49 @@ suspend fun article(id: ArticleId): ArticleResult
 **裝置上驗過兩條路徑**：清空資料後冷啟動（等網路）、`force-stop` 後冷啟動（三秒內就有
 內容，來自磁碟）。
 
+## 27. 分頁的重複在客戶端擋，遺漏擋不住——而且不假裝擋得住
+
+**選了** —— 保留伺服器的 offset 分頁，在 `ArticlePagingSource` 裡以「這一代已經給過什麼」
+的集合去重。**不做 keyset 游標。**
+
+**先量，再決定**
+
+| 問題 | 實測 |
+|---|---|
+| 單次回應會給重複的 id 嗎 | **不會。**`limit=20` 和 `limit=100` 都是 id 全相異 |
+| 同一個過去的截點，集合會長大嗎 | **會。**`published_at_lte=2026-08-31T00:00:00Z` 一天內 35882 → 35883 |
+| 排序有平手嗎 | **有。**100 篇裡兩個時間戳被多篇共用（一個 2 篇、一個 4 篇） |
+| 平手的順序穩定嗎 | 連抓三次一致，但排序鍵只有 `published_at` 一欄，**沒有保證** |
+| 能不能複合排序 | **不能。**`ordering=-published_at,-id` → `"-id is not one of the available choices"` |
+
+**所以重複不是後端造成的** —— 每一次回應內部都自洽。重複是**我們**把兩次獨立查詢當成
+同一份清單的前後段拼起來造成的，而 `offset=N` 的語意是「跳過**現在**這個查詢的前 N 列」，
+API 從來沒承諾過可拼接。
+
+**為什麼不做 keyset** —— 標準 keyset 有一個硬性前提：**排序鍵必須唯一**，不唯一時
+必須加第二欄位打破平手，否則邊界上時間相同的紀錄會被跳過或重複
+（[Stacksync](https://www.stacksync.com/blog/keyset-cursors-postgres-pagination-fast-accurate-scalable)）。
+SNAPI 拒絕複合排序，這個前提給不起——**做出來的會是一個在它自己的已知失效點上失效的 keyset**。
+
+**業界對「伺服器不可控」的答案就是客戶端去重**
+（[Paging 3 遷移指南](https://developer.android.com/topic/libraries/architecture/paging/v3-migration)
+與相關實務文章的一致做法）。
+
+**去重放哪裡** —— `PagingSource` 的 instance。**一代 = 一個 instance**，所以那個集合的
+壽命剛好等於「這一代已經給過什麼」：不需要清除、不需要旗標、換代時連同 instance 一起消失。
+放在 ViewModel（原本的位置）是錯的，因為 ViewModel 活得比一代久——它現在能work是巧合。
+
+**擋不住的：遺漏** —— 如果是**刪除**而不是插入，邊界往前滑，中間那一篇**沒有人會看到**，
+客戶端偵測不到。這無解，而且**不會被寫成解決了**。
+
+**兩個保證的差別**
+
+| | offset + 去重 | 需要什麼 |
+|---|---|---|
+| 不重複 | ✅ | 客戶端集合 |
+| 不遺漏 | ❌ | 真正的 keyset（本 API 給不起） |
+| 清單凍結在某一刻 | ❌ | 伺服器發的 snapshot token（本 API 沒有） |
+
+**這一則推翻了 `DECISIONS.md` 16** 的說法。那時寫「釘住視窗大幅降低位移」是推理；
+現在有數字，而且知道降低的是哪一種、剩下的是哪一種。
+
