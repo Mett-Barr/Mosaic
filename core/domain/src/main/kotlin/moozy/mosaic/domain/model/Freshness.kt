@@ -4,29 +4,26 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * How long content stays worth showing before it is worth asking for again.
- *
- * Two windows, because the question has two answers. On a connection the reader
- * is not paying for, "reasonably fresh" is the only consideration. On mobile data
- * every refresh is a small charge on somebody's plan, and a feed that is fifteen
- * minutes out of date is a much smaller problem than a feed that quietly spends
- * their allowance while they read it.
- *
- * The two are one type rather than two settings so that they cannot drift apart,
- * and so that the metered window cannot accidentally be made the shorter one --
- * which would spend more data than having no policy at all.
- */
-/**
  * How long an answer stays good enough to reuse.
  *
  * What this measures is **when it was asked for**, not when the thing it
  * describes happened. "Fifteen minutes" is a promise not to ask again inside
- * fifteen minutes; it is not a promise that the answer is at most fifteen
- * minutes old. For the weather those differ: Open-Meteo's current conditions
- * come from a model that steps every fifteen minutes, so a reading fetched a
- * moment ago may already describe a moment further back. The card says what it
- * was told and the policy governs the asking, which is the one of the two this
- * app can actually control.
+ * fifteen minutes; it is not a promise the answer is at most fifteen minutes
+ * old. For the weather the two differ: Open-Meteo's current conditions come
+ * from a model that steps every fifteen minutes, so a reading fetched a moment
+ * ago may already describe a moment further back. The card says what it was
+ * told; the policy governs the asking, which is the one of the two this app can
+ * control.
+ *
+ * Two windows, because the question has two answers. On a connection the reader
+ * is not paying for, "reasonably fresh" is the only consideration. On mobile
+ * data every refresh is a small charge on somebody's plan, and a feed fifteen
+ * minutes out of date is a much smaller problem than a feed that quietly spends
+ * their allowance while they read it.
+ *
+ * The two are one type rather than two settings so that they cannot drift
+ * apart, and so that the metered window cannot accidentally be made the shorter
+ * one -- which would spend more data than having no policy at all.
  */
 data class Freshness(
     val staleAfter: Duration,
