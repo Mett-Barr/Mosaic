@@ -82,15 +82,21 @@ class ImportSavedArticlesTest {
         assertEquals(listOf("1"), kept.saved.first().map { it.id.value })
     }
 
+    /**
+     * The file is newest-first and has no timestamps of its own, so the position
+     * in the array is the whole record of the order there is.
+     *
+     * The ids are out of order on purpose. A file of 3, 2, 1 expecting 3, 2, 1
+     * asserts nothing: the ORDER BY breaks ties on id descending, so that answer
+     * comes back even if the import gives every row the same saved_at.
+     */
     @Test
     fun `the order the previous version kept is the order that survives`() = runTest {
-        // The file is newest-first and has no timestamps of its own, so the
-        // position in the array is the only record of the order there is.
-        val file = file(listOf(row("3"), row("2"), row("1")).json())
+        val file = file(listOf(row("1"), row("3"), row("2")).json())
 
         val kept = kept(database(testScheduler), file)
 
-        assertEquals(listOf("3", "2", "1"), kept.saved.first().map { it.id.value })
+        assertEquals(listOf("1", "3", "2"), kept.saved.first().map { it.id.value })
     }
 
     @Test

@@ -150,15 +150,20 @@ class RoomSavedArticlesTest {
         assertEquals(listOf("1", "2"), kept.saved.first().map { it.id.value })
     }
 
+    /**
+     * Saved out of id order on purpose. Saving 1, 2, 3 and expecting 3, 2, 1
+     * asserts nothing: the ORDER BY breaks ties on id descending, so that answer
+     * comes back whether or not saved_at is written or read at all.
+     */
     @Test
     fun `the most recently saved article comes first`() = runTest {
         val kept = kept(database(testScheduler))
 
-        kept.save(article(1))
         kept.save(article(2))
+        kept.save(article(1))
         kept.save(article(3))
 
-        assertEquals(listOf("3", "2", "1"), kept.saved.first().map { it.id.value })
+        assertEquals(listOf("3", "1", "2"), kept.saved.first().map { it.id.value })
     }
 
     @Test
