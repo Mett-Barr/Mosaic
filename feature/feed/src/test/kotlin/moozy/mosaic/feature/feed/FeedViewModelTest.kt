@@ -147,7 +147,7 @@ class FeedViewModelTest {
         feed.state.test {
             val content = awaitItem() as FeedUiState.Content
             assertEquals(listOf("1"), content.articles.map { it.id.value })
-            assertEquals(weather(), content.weather)
+            assertEquals(weather().headline(), content.weather)
         }
     }
 
@@ -168,7 +168,7 @@ class FeedViewModelTest {
             gate.complete(ArticlesResult.Loaded(listOf(article(1)), next = null))
 
             val content = awaitItem() as FeedUiState.Content
-            assertEquals("the card should not depend on which answer came back first", weather(), content.weather)
+            assertEquals("the card should not depend on which answer came back first", weather().headline(), content.weather)
         }
     }
 
@@ -193,7 +193,7 @@ class FeedViewModelTest {
 
             val more = awaitItem() as FeedUiState.Content
             assertEquals(listOf("1", "2"), more.articles.map { it.id.value })
-            assertEquals("a card should not vanish because a page arrived", weather(), more.weather)
+            assertEquals("a card should not vanish because a page arrived", weather().headline(), more.weather)
         }
     }
 
@@ -239,9 +239,10 @@ class FeedViewModelTest {
         feed.state.test {
             val state = awaitItem()
             assertTrue("expected an error, got $state", state is FeedUiState.Error)
-            assertTrue(
+            assertEquals(
                 "expected it to say the page was unreadable, got $state",
-                (state as FeedUiState.Error).reason is FeedFailure.Unreadable,
+                "The feed sent something this app could not read.",
+                (state as FeedUiState.Error).hint,
             )
         }
     }
@@ -264,7 +265,7 @@ class FeedViewModelTest {
 
             val state = awaitItem() as FeedUiState.Content
             assertEquals(listOf("1"), state.articles.map { it.id.value })
-            assertTrue("expected to be told, got $state", state.moreFailed is FeedFailure.Unreadable)
+            assertEquals("expected to be told, got $state", "The feed sent something this app could not read.", state.moreFailed)
         }
     }
 
@@ -284,7 +285,10 @@ class FeedViewModelTest {
         feed.state.test {
             val state = awaitItem()
             assertTrue("expected an error, got $state", state is FeedUiState.Error)
-            assertEquals(FeedFailure.Server(500), (state as FeedUiState.Error).reason)
+            assertEquals(
+                "The feed is having trouble (error 500).",
+                (state as FeedUiState.Error).hint,
+            )
         }
     }
 
@@ -354,7 +358,11 @@ class FeedViewModelTest {
             assertTrue("expected to still have the first page, got $state", state is FeedUiState.Content)
             val content = state as FeedUiState.Content
             assertEquals(listOf("1"), content.articles.map { it.id.value })
-            assertTrue("the reader should be told the next page failed", content.moreFailed is FeedFailure.Offline)
+            assertEquals(
+                "the reader should be told the next page failed",
+                "There is no connection right now.",
+                content.moreFailed,
+            )
             assertTrue("and be able to try again", content.canLoadMore)
         }
     }

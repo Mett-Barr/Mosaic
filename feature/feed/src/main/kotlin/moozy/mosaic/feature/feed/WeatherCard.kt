@@ -11,8 +11,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import moozy.mosaic.domain.model.Sky
-import moozy.mosaic.domain.model.Weather
 
 /**
  * The other kind of cell.
@@ -23,7 +21,7 @@ import moozy.mosaic.domain.model.Weather
  * a story.
  */
 @Composable
-internal fun WeatherCard(weather: Weather, modifier: Modifier = Modifier) {
+internal fun WeatherCard(weather: WeatherHeadline, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -33,22 +31,9 @@ internal fun WeatherCard(weather: Weather, modifier: Modifier = Modifier) {
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(weather.place, style = MaterialTheme.typography.titleMedium)
-            Text("${weather.temperature}°", style = MaterialTheme.typography.displayMedium)
-            Text(
-                "${weather.sky.readable()} · ${weather.high}° / ${weather.low}°",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Text(weather.temperature, style = MaterialTheme.typography.displayMedium)
+            Text(weather.conditions, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
-private fun Sky.readable(): String = when (this) {
-    Sky.CLEAR -> "Clear"
-    Sky.CLOUDY -> "Cloudy"
-    Sky.FOG -> "Fog"
-    Sky.DRIZZLE -> "Drizzle"
-    Sky.RAIN -> "Rain"
-    Sky.SNOW -> "Snow"
-    Sky.THUNDERSTORM -> "Thunderstorms"
-    Sky.UNKNOWN -> "Weather"
-}
