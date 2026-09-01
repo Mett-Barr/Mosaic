@@ -24,8 +24,18 @@ sealed interface FeedPhase {
     /** There are articles. Whatever else is happening, they are what matters. */
     data object Ready : FeedPhase
 
-    /** Nothing to show, and a reason for it the reader can act on. */
-    data class Failed(val message: String, val hint: String) : FeedPhase
+    /**
+     * Nothing to show, and a reason for it the reader can act on.
+     *
+     * [offline] is here because the screen draws a different icon for it, and
+     * asking the screen to work that out from the words would be a decision
+     * made where nothing can check it.
+     */
+    data class Failed(
+        val message: String,
+        val hint: String,
+        val offline: Boolean = false,
+    ) : FeedPhase
 }
 
 /**
@@ -58,6 +68,7 @@ private fun Throwable.asPhase(): FeedPhase.Failed = when (val reason = (this as?
     is FeedFailure.Offline -> FeedPhase.Failed(
         message = "You appear to be offline.",
         hint = "The feed will be here when the connection is.",
+        offline = true,
     )
 
     null -> FeedPhase.Failed(SOMETHING_WENT_WRONG, "Something unexpected happened.")
@@ -67,3 +78,7 @@ private fun Throwable.asPhase(): FeedPhase.Failed = when (val reason = (this as?
 
 /** The same words wherever the app has nothing more specific to say. */
 internal const val SOMETHING_WENT_WRONG = "Something went wrong."
+
+/** The same unwrapping, for a failure at the bottom of a list rather than instead of one. */
+internal fun Throwable.hint(): String =
+    (this as? FeedRefused)?.reason?.hint() ?: "Something unexpected happened."

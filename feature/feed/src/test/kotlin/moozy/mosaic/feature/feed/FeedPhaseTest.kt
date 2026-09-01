@@ -41,6 +41,7 @@ class FeedPhaseTest {
             FeedPhase.Failed(
                 message = "You appear to be offline.",
                 hint = "The feed will be here when the connection is.",
+                offline = true,
             ),
             phase,
         )

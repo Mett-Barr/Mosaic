@@ -715,3 +715,51 @@ Material 的語意被挪用了一層，讀 theme 的人得看註解才知道為�
 
 **同一個理由造成的重複** —— 離線／錯誤那張小卡在 `:feature:feed` 和 `:feature:saved`
 各寫了一份。能共用的前提同樣是那條被禁止的邊。十幾行的重複比一條架構例外便宜。
+
+## 28. 分頁交給 Paging 3，狀態不進 UI State
+
+**這一則是使用者主導的**——包括「刷新是命令、建模成事件」和「別讓 Paging 承擔冷啟動快取」
+這兩個把設計拉回正軌的判斷。
+
+**選了** —— `Pager` 建在 ViewModel，清單是它自己的一條 flow：
+
+```kotlin
+val stories: Flow<PagingData<ArticleRow>> = reloads.receiveAsFlow()
+    .onStart { emit(Unit) }
+    .flatMapLatest { newGeneration() }
+    .cachedIn(viewModelScope)
+
+fun refresh() { reloads.trySend(Unit) }
+```
+
+**`PagingData` 不放進 UI state** —— 官方文件寫明「**每個 `PagingData` 實例預設只能使用一次**」，
+而 `data class` 的欄位會被反覆讀取（每次重組、每次 `copy`、每次相等性比較）。它是一個
+**進行中的句柄，不是值**。所以 MVI 的狀態與分頁資料是兩條獨立暴露的東西
+（[Load and display paged data](https://developer.android.com/topic/libraries/architecture/paging/v3-paged-data)）。
+
+**可以推導的東西不另外儲存** —— Loading／Empty／Ready／Failed 全部由
+`feedPhase(loadState, itemCount)` 從 Paging 已經報告的東西算出來。存一份在 state 裡
+就是同一個事實的第二個版本，而兩份會不同步。
+
+**刷新是事件，不是狀態** —— `Channel(CONFLATED)`，不是 `StateFlow<Int>` 計數器。
+計數器唯一的作用是繞開 `StateFlow` 的去重，那本身就是選錯原語的徵兆。
+
+**`onStart` 不是偽裝的事件** —— 它是「開始收集」這個動作的 hook，而那正是想要一個
+世代的兩個理由之一。把種子塞進 channel 語義不同：那是「有一件事排隊等著」，
+沒人收集時它會一直躺在緩衝區。
+
+**`initialLoadSize` 必須明寫** —— 預設是 `pageSize × 3`，而來源只在第一次請求認 `limit`，
+之後把它抄進每一個連結。放著不管，**每一頁都會變成 60 篇**，花的是別人的流量。
+
+**刪掉的** —— `FeedUiState` 整個（五個型別加五個旗標）、`FeedViewModel` 裡的
+`next`／`loading`／`kept`／`beganLoading`／`loaded`／`failed`，以及畫面裡那個
+「捲到接近底部就載入」的效果。**那個無鎖的 `loading` 布林特別值得拿掉**——
+同一個專案裡 `FileSavedArticles` 為了同樣的危險用了 `Mutex`。
+
+**測試從 24 個變成 4 個**，不是覆蓋變少：哪一個畫面在顯示搬到 `FeedPhaseTest`（5 個），
+一個世代會不會重複搬到 `ArticlePagingSourceTest`（6 個）。留在 ViewModel 的是
+Paging 不做的事——什麼時候開始工作、字長什麼樣、下拉真正造成什麼。
+
+**裝置上驗過的兩件**：捲到底會載入下一頁；**下拉更新時清單不會閃空白**——`cachedIn`
+在新世代載入期間保住已有的項目，所以不需要另外拿一個 `refreshing` 布林。
+

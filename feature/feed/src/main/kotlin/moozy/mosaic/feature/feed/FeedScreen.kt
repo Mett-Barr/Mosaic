@@ -12,8 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
@@ -27,11 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.LoadState
+import androidx.paging.compose.LazyPagingItems
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import moozy.mosaic.domain.model.ArticleId
 
@@ -51,11 +50,11 @@ fun FeedRoute(
     modifier: Modifier = Modifier,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val stories = viewModel.stories.collectAsLazyPagingItems()
+    val weather by viewModel.weather.collectAsStateWithLifecycle()
     FeedScreen(
-        state = state,
-        onRetry = viewModel::retry,
-        onLoadMore = viewModel::loadMore,
+        stories = stories,
+        weather = weather,
         onRefresh = viewModel::refresh,
         onOpenArticle = onOpenArticle,
         modifier = modifier,
@@ -70,9 +69,8 @@ fun FeedRoute(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
-    state: FeedUiState,
-    onRetry: () -> Unit,
-    onLoadMore: () -> Unit,
+    stories: LazyPagingItems<ArticleRow>,
+    weather: WeatherHeadline?,
     onRefresh: () -> Unit,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
@@ -80,26 +78,30 @@ fun FeedScreen(
     // The gesture belongs to the whole screen, not only the list: a reader who
     // pulls an "you are offline" screen down is asking the same question.
     PullToRefreshBox(
-        isRefreshing = (state as? FeedUiState.Content)?.refreshing == true,
+        // The pull rebuilds the generation, so Paging's own refresh state is
+        // what the spinner follows -- there is no second flag saying the same
+        // thing in this app's words.
+        isRefreshing = stories.loadState.refresh is LoadState.Loading && stories.itemCount > 0,
         onRefresh = onRefresh,
         modifier = modifier,
     ) {
-        FeedContent(state, onRetry, onLoadMore, onOpenArticle)
+        FeedContent(stories, weather, onOpenArticle)
     }
 }
 
 @Composable
 private fun FeedContent(
-    state: FeedUiState,
-    onRetry: () -> Unit,
-    onLoadMore: () -> Unit,
+    stories: LazyPagingItems<ArticleRow>,
+    weather: WeatherHeadline?,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    when (state) {
-        FeedUiState.Loading -> Centred(modifier) { CircularProgressIndicator() }
+    // Which screen this is, worked out by a function with tests rather than by a
+    // `when` down here where nothing in this project could check it.
+    when (val phase = feedPhase(stories.loadState, stories.itemCount)) {
+        FeedPhase.Loading -> Centred(modifier) { CircularProgressIndicator() }
 
-        FeedUiState.Empty -> Centred(modifier) {
+        FeedPhase.Empty -> Centred(modifier) {
             Text(
                 "No articles yet.",
                 style = MaterialTheme.typography.bodyLarge,
@@ -107,46 +109,31 @@ private fun FeedContent(
             )
         }
 
-        FeedUiState.Offline -> Centred(modifier) {
+        is FeedPhase.Failed -> Centred(modifier) {
             Notice(
-                icon = Icons.Filled.CloudOff,
-                message = "You appear to be offline.",
-                hint = "The feed will be here when the connection is.",
-                onRetry = onRetry,
+                icon = if (phase.offline) Icons.Filled.CloudOff else Icons.Outlined.ErrorOutline,
+                message = phase.message,
+                hint = phase.hint,
+                onRetry = stories::retry,
             )
         }
 
-        is FeedUiState.Error -> Centred(modifier) {
-            Notice(
-                icon = Icons.Outlined.ErrorOutline,
-                message = state.message,
-                hint = state.hint,
-                onRetry = onRetry,
-            )
-        }
-
-        is FeedUiState.Content -> ArticleList(state, onLoadMore, onOpenArticle, modifier)
+        FeedPhase.Ready -> ArticleList(stories, weather, onOpenArticle, modifier)
     }
 }
 
 @Composable
 private fun ArticleList(
-    state: FeedUiState.Content,
-    onLoadMore: () -> Unit,
+    stories: LazyPagingItems<ArticleRow>,
+    weather: WeatherHeadline?,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    LoadMoreWhenNearTheEnd(
-        listState = listState,
-        // Not after a failure. The effect restarts when loadingMore goes back to
-        // false, and the reader is still at the bottom, so an unguarded condition
-        // asks again immediately -- and again -- which is how an app spends
-        // somebody's mobile data on a request that just failed. After a failure
-        // the next attempt is the reader's to make, with the button below.
-        enabled = state.canLoadMore && !state.loadingMore && state.moreFailed == null,
-        onLoadMore = onLoadMore,
-    )
+    // Asking for the next page when the reader nears the end is Paging's job
+    // now, and so is not asking again after one failed: an unguarded retry at
+    // the bottom of a list is how an app spends somebody's data on a request
+    // that has just failed, and the library declines by itself.
 
     LazyColumn(
         state = listState,
@@ -154,11 +141,11 @@ private fun ArticleList(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        state.weather?.let { weather ->
-            item(key = "weather") { WeatherCard(weather) }
+        weather?.let { reading ->
+            item(key = "weather") { WeatherCard(reading) }
         }
 
-        if (state.articles.isNotEmpty()) {
+        if (stories.itemCount > 0) {
             item(key = "stories") {
                 Text(
                     "Top Stories",
@@ -173,12 +160,13 @@ private fun ArticleList(
         // get a thumbnail beside them. That is the reference's own arrangement,
         // and it earns its keep: the top of a feed is where a reader decides
         // whether to keep going, and a wall of identical rows makes that harder.
-        itemsIndexed(state.articles, key = { _, article -> article.id.value }) { index, article ->
+        items(stories.itemCount, key = stories.itemKey { it.id.value }) { index ->
+            val article = stories[index] ?: return@items
             val open = { onOpenArticle(article.id) }
             if (index == 0) LeadStory(article, open) else StoryRow(article, open)
         }
 
-        if (state.loadingMore) {
+        if (stories.loadState.append is LoadState.Loading) {
             item {
                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -186,18 +174,18 @@ private fun ArticleList(
             }
         }
 
-        state.moreFailed?.let { failure ->
+        (stories.loadState.append as? LoadState.Error)?.let { failed ->
             item {
                 Notice(
                     icon = Icons.Outlined.ErrorOutline,
                     message = "Could not load more.",
-                    hint = failure,
-                    onRetry = onLoadMore,
+                    hint = failed.error.hint(),
+                    onRetry = stories::retry,
                 )
             }
         }
 
-        if (!state.canLoadMore && state.moreFailed == null) {
+        if (stories.loadState.append.endOfPaginationReached) {
             item {
                 Text(
                     "That is everything.",
@@ -306,28 +294,6 @@ private fun Attribution(attribution: String, modifier: Modifier = Modifier) {
     )
 }
 
-/**
- * Asks for the next page when the reader is close enough to the bottom that they
- * would otherwise be waiting for it.
- */
-@Composable
-private fun LoadMoreWhenNearTheEnd(
-    listState: LazyListState,
-    enabled: Boolean,
-    onLoadMore: () -> Unit,
-) {
-    val nearTheEnd by remember(listState) {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
-            last >= info.totalItemsCount - ITEMS_BEFORE_THE_END
-        }
-    }
-    LaunchedEffect(listState, enabled) {
-        snapshotFlow { nearTheEnd }.collect { close -> if (close && enabled) onLoadMore() }
-    }
-}
-
 @Composable
 private fun Centred(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
@@ -382,6 +348,5 @@ private fun Notice(
     }
 }
 
-private const val ITEMS_BEFORE_THE_END = 3
 private const val LEAD_IMAGE_RATIO = 16f / 9f
 private val THUMBNAIL = 92.dp
