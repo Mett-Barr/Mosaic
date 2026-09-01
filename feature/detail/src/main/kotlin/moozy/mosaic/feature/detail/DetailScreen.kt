@@ -24,8 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import moozy.mosaic.core.ui.readableTime
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
@@ -107,7 +106,7 @@ private fun Article(
         ) {
             Text(article.title, style = MaterialTheme.typography.headlineSmall)
             Text(
-                "${article.source} · ${readableTime.format(article.publishedAt)}",
+                "${article.source} · ${readableTime(article.publishedAt)}",
                 style = MaterialTheme.typography.labelMedium,
             )
             if (article.summary.isNotBlank()) {
@@ -152,5 +151,3 @@ private fun FeedFailure.hint(): String = when (this) {
 /** An article that is gone will be gone next time too; everything else might not be. */
 private fun FeedFailure.worthTryingAgain(): Boolean = this !is FeedFailure.Missing
 
-private val readableTime: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("d MMM, HH:mm").withZone(ZoneId.systemDefault())

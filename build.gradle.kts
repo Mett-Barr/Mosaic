@@ -27,11 +27,11 @@ val allowedProjectDependencies = mapOf(
     ":core:domain" to emptySet(),
     ":core:data" to setOf(":core:domain"),
     ":core:ui" to setOf(":core:domain"),
-    // No :core:ui here on purpose. A feature reads the theme through Compose,
-    // from whoever applied it above them -- a Gradle edge would only be needed
-    // for a shared composable, and there is not one yet.
-    ":feature:feed" to setOf(":core:domain"),
-    ":feature:detail" to setOf(":core:domain"),
+    // The theme still arrives through Compose, from whoever applied it above.
+    // The edge is here for what Compose cannot pass down: a timestamp format
+    // that two screens have to agree on, and did not while each kept its own.
+    ":feature:feed" to setOf(":core:domain", ":core:ui"),
+    ":feature:detail" to setOf(":core:domain", ":core:ui"),
     ":feature:saved" to setOf(":core:domain"),
     // :app is the composition root: it is the one module allowed to see everyone.
     ":app" to setOf(
