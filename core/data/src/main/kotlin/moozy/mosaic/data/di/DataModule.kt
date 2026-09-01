@@ -13,14 +13,16 @@ import androidx.core.content.getSystemService
 import java.io.File
 import java.time.Instant
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import moozy.mosaic.data.article.NetworkArticleRepository
 import moozy.mosaic.data.article.CachingArticles
 import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.FileSavedArticles
-import moozy.mosaic.data.weather.FileWeatherCache
+import moozy.mosaic.data.weather.FileWeatherStore
 import moozy.mosaic.data.weather.OpenMeteoWeather
 import moozy.mosaic.data.weather.Place
 import moozy.mosaic.data.weather.openMeteoClient
@@ -85,11 +87,15 @@ internal object DataModule {
             client = openMeteoClient(OkHttp.create()),
             place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
             clock = Clock { Instant.now() },
+            // A scope that outlives every screen, because the stream is shared
+            // by all of them and must not end when one of them does. It is
+            // never cancelled: the process ending is what ends it.
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
             // cacheDir, alongside the articles, because a reading is reproducible
             // by asking again: the system may delete it when storage runs short
             // and nothing is lost but one request. filesDir would have claimed it
             // was the reader's, which it is not.
-            cache = FileWeatherCache(File(context.cacheDir, "weather.json"), Dispatchers.IO),
+            store = FileWeatherStore(File(context.cacheDir, "weather.json"), Dispatchers.IO),
         )
 
     /**

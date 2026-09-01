@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.onStart
@@ -14,7 +15,6 @@ import kotlinx.coroutines.launch
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
-import moozy.mosaic.domain.model.WeatherResult
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.WeatherRepository
 
@@ -48,42 +48,23 @@ class FeedViewModel @Inject constructor(
      * already holds unless the source has produced a new reading, and the
      * articles are only asked for when there are none on screen.
      */
-    val state: StateFlow<FeedUiState> = _state
+    val state: StateFlow<FeedUiState> = combine(_state, weather.current) { feed, sky ->
+        // The card is joined on rather than carried, so no path through the
+        // feed can forget it. One did, and the card vanished depending on
+        // which request answered first.
+        if (feed is FeedUiState.Content) feed.copy(weather = sky?.headline()) else feed
+    }
         .onStart {
             // Not on every return: replacing the list under a reader who is
             // somewhere in it is worse than a list a few minutes old. A screen
             // showing nothing, or showing a failure, has nothing to lose.
             if (_state.value !is FeedUiState.Content) load(from = null)
-            askTheWeather()
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WATCHING_GRACE), FeedUiState.Loading)
 
     private var next: PageCursor? = null
     private var loading = false
-    private var sky: WeatherHeadline? = null
 
-    /**
-     * Asked for alongside the articles rather than after them: the two sources
-     * have nothing to do with each other, and making the reader wait for the
-     * weather before seeing the news would be inventing a dependency.
-     */
-    private fun askTheWeather() {
-        viewModelScope.launch {
-            when (val reading = weather.current()) {
-                is WeatherResult.Loaded -> {
-                    val headline = reading.weather.headline()
-                    sky = headline
-                    val showing = _state.value
-                    if (showing is FeedUiState.Content) {
-                        _state.value = showing.copy(weather = headline)
-                    }
-                }
-
-                // No card, and no error either. The reader came for the articles.
-                is WeatherResult.Failed -> Unit
-            }
-        }
-    }
 
     /**
      * Start again from the top, and insist: a reader who asks again has said they
@@ -98,11 +79,6 @@ class FeedViewModel @Inject constructor(
     fun refresh() {
         next = null
         load(from = null, force = true)
-        // The reader pulled the whole screen down, not only the list. This
-        // cannot invent a reading the source has not produced -- pulling down
-        // twice inside one fifteen-minute step shows the same temperature both
-        // times, and that is the honest answer rather than a broken one.
-        askTheWeather()
     }
 
     /** Ask for the page after the last one, if the source said there is one. */
@@ -164,20 +140,15 @@ class FeedViewModel @Inject constructor(
                 articles = all,
                 canLoadMore = result.next != null,
                 moreFailed = unreadable(result.dropped),
-                weather = sky,
             )
 
             nothingUsable -> FeedUiState.Error(SOMETHING_WENT_WRONG, unreadable(result.dropped))
 
             all.isEmpty() -> FeedUiState.Empty
 
-            // Every path that builds a Content carries the weather. Forgetting it
-            // on one of them makes the card depend on which request answered
-            // first, which is not something a reader should be able to notice.
             else -> FeedUiState.Content(
                 articles = all,
                 canLoadMore = result.next != null,
-                weather = sky,
             )
         }
     }

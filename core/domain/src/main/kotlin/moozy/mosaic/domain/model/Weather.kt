@@ -72,17 +72,3 @@ data class Weather(
     }
 }
 
-/**
- * What asking for the weather produced.
- *
- * Failing to get the weather is not the same kind of event as failing to get the
- * feed: the feed is why the reader opened the app, and the weather is a card at
- * the top of it. So the failure travels, but nothing above here is obliged to
- * turn it into a screen.
- */
-sealed interface WeatherResult {
-
-    data class Loaded(val weather: Weather) : WeatherResult
-
-    data class Failed(val reason: FeedFailure) : WeatherResult
-}

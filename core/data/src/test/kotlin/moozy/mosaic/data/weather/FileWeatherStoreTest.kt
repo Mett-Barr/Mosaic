@@ -20,28 +20,28 @@ import org.junit.rules.TemporaryFolder
  * the reading only in memory answered the second one by accident.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-class FileWeatherCacheTest {
+class FileWeatherStoreTest {
 
     @get:Rule
     val folder = TemporaryFolder()
 
-    private fun cache(file: File) = FileWeatherCache(file, UnconfinedTestDispatcher())
+    private fun store(file: File) = FileWeatherStore(file, UnconfinedTestDispatcher())
 
     @Test
     fun `a reading written down is there for the next run`() = runTest {
         val file = folder.newFile("weather.json")
-        val askAgainAt = Instant.parse("2026-09-01T12:15:00Z")
+        val fetchedAt = Instant.parse("2026-09-01T12:01:00Z")
 
-        cache(file).write(CachedWeather(weather(), askAgainAt))
+        store(file).write(StoredReading(weather(), fetchedAt))
 
-        val read = cache(file).read()
+        val read = store(file).read()
         assertEquals(weather(), read?.weather)
-        assertEquals(askAgainAt, read?.askAgainAt)
+        assertEquals(fetchedAt, read?.fetchedAt)
     }
 
     @Test
     fun `a cache nobody has written to has nothing in it`() = runTest {
-        assertNull(cache(File(folder.root, "never-written.json")).read())
+        assertNull(store(File(folder.root, "never-written.json")).read())
     }
 
     @Test
@@ -49,7 +49,7 @@ class FileWeatherCacheTest {
         val file = folder.newFile("weather.json")
         file.writeText("half a file")
 
-        assertNull(cache(file).read())
+        assertNull(store(file).read())
     }
 
     @Test
@@ -59,11 +59,11 @@ class FileWeatherCacheTest {
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":10,"low":30,"sky":"CLOUDY",
                "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
-               "ask_again_at":"2026-09-01T12:15:00Z"}"""
+               "fetched_at":"2026-09-01T12:15:00Z"}"""
                 .trimIndent(),
         )
 
-        assertNull(cache(file).read())
+        assertNull(store(file).read())
     }
 
     @Test
@@ -72,11 +72,11 @@ class FileWeatherCacheTest {
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
                "measured_at":"the day before yesterday","steps_every_seconds":900,
-               "ask_again_at":"2026-09-01T12:15:00Z"}"""
+               "fetched_at":"2026-09-01T12:15:00Z"}"""
                 .trimIndent(),
         )
 
-        assertNull(cache(file).read())
+        assertNull(store(file).read())
     }
 
     @Test
@@ -85,11 +85,11 @@ class FileWeatherCacheTest {
         file.writeText(
             """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
                "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
-               "ask_again_at":"soon"}"""
+               "fetched_at":"soon"}"""
                 .trimIndent(),
         )
 
-        assertNull(cache(file).read())
+        assertNull(store(file).read())
     }
 
     private fun weather() = Weather(
