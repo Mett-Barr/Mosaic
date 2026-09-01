@@ -30,19 +30,8 @@ class FileArticleCacheTest {
         val file = folder.newFile("feed.json")
         file.writeText(
             """{"articles":[{"id":"1","title":"T","summary":"S","source":"NASA",
-               "url":"https://example.test/1","published_at":"once upon a time"}],
-               "fetched_at":"2026-09-01T12:00:00Z"}"""
+               "url":"https://example.test/1","published_at":"once upon a time"}]}"""
                 .trimIndent(),
-        )
-
-        assertNull(cache(file).read())
-    }
-
-    @Test
-    fun `an unreadable moment of fetching reads as nothing too`() = runTest {
-        val file = folder.newFile("feed.json")
-        file.writeText(
-            """{"articles":[],"fetched_at":"recently"}"""
         )
 
         assertNull(cache(file).read())
@@ -51,14 +40,12 @@ class FileArticleCacheTest {
     @Test
     fun `a page written down is there for the next run`() = runTest {
         val file = folder.newFile("feed.json")
-        val fetchedAt = Instant.parse("2026-09-01T12:00:00Z")
 
-        cache(file).write(CachedArticles(listOf(article(1)), PageCursor(NEXT), fetchedAt))
+        cache(file).write(CachedArticles(listOf(article(1)), PageCursor(NEXT)))
 
         val read = cache(file).read()
         assertEquals(listOf("1"), read?.articles?.map { it.id.value })
         assertEquals(PageCursor(NEXT), read?.next)
-        assertEquals(fetchedAt, read?.fetchedAt)
     }
 
     @Test
@@ -84,7 +71,7 @@ class FileArticleCacheTest {
             """
             {"articles": [{"id": "", "title": "t", "summary": "", "source": "s",
               "url": "u", "published_at": "not a time"}],
-             "next": null, "fetched_at": "2026-09-01T12:00:00Z"}
+             "next": null}
             """.trimIndent(),
         )
 
@@ -94,9 +81,8 @@ class FileArticleCacheTest {
     @Test
     fun `how many rows the page lost is remembered too`() = runTest {
         val file = folder.newFile("feed.json")
-        val fetchedAt = Instant.parse("2026-09-01T12:00:00Z")
 
-        cache(file).write(CachedArticles(listOf(article(1)), null, fetchedAt, dropped = 2))
+        cache(file).write(CachedArticles(listOf(article(1)), null, dropped = 2))
 
         assertEquals(2, cache(file).read()?.dropped)
     }
@@ -105,9 +91,9 @@ class FileArticleCacheTest {
     fun `the last page written is the one that is read`() = runTest {
         val file = folder.newFile("feed.json")
         val cache = cache(file)
-        cache.write(CachedArticles(listOf(article(1)), null, Instant.parse("2026-09-01T12:00:00Z")))
+        cache.write(CachedArticles(listOf(article(1)), null))
 
-        cache.write(CachedArticles(listOf(article(2)), null, Instant.parse("2026-09-01T13:00:00Z")))
+        cache.write(CachedArticles(listOf(article(2)), null))
 
         assertEquals(listOf("2"), cache(file).read()?.articles?.map { it.id.value })
     }

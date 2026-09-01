@@ -155,7 +155,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?, force: Boolean) = gate.await()
+                override suspend fun articles(after: PageCursor?) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(),
@@ -202,7 +202,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?, force: Boolean) = gate.await()
+                override suspend fun articles(after: PageCursor?) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(weather()),
@@ -437,7 +437,6 @@ class FeedViewModelTest {
             assertEquals(listOf("2"), after.articles.map { it.id.value })
             assertTrue("and visibly stop", !after.refreshing)
         }
-        assertEquals(listOf(true), repository.forced)
     }
 
     @Test
@@ -458,44 +457,6 @@ class FeedViewModelTest {
             assertEquals(FeedUiState.Loading, awaitItem())
             assertTrue(awaitItem() is FeedUiState.Content)
         }
-    }
-
-    @Test
-    fun `retrying insists, rather than being told the answer is still fresh`() = runTest {
-        val repository = FakeArticles(
-            ArticlesResult.Loaded(listOf(article(1)), next = null),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val feed = FeedViewModel(repository, FakeWeather())
-
-        feed.state.test {
-            awaitItem()
-
-            feed.retry()
-
-            // The list stays up while it reloads; see the pull-to-refresh case.
-            awaitItem()
-            assertEquals(listOf("2"), (awaitItem() as FeedUiState.Content).articles.map { it.id.value })
-        }
-        assertEquals("a reader asking again should not be answered from a file", listOf(true), repository.forced)
-    }
-
-    @Test
-    fun `asking for the next page never insists`() = runTest {
-        val repository = FakeArticles(
-            ArticlesResult.Loaded(listOf(article(1)), PageCursor(NEXT)),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val feed = FeedViewModel(repository, FakeWeather())
-
-        feed.state.test {
-            awaitItem()
-            feed.loadMore()
-            awaitItem()
-            awaitItem()
-        }
-
-        assertEquals("only the first page is ever cached, so only it can be insisted on", emptyList<Boolean>(), repository.forced)
     }
 
     @Test
@@ -566,11 +527,7 @@ class FeedViewModelTest {
 
         override suspend fun article(id: ArticleId) = notAsked()
 
-        /** Which calls insisted on a request rather than accepting a cached page. */
-        val forced = mutableListOf<Boolean>()
-
-        override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
-            if (force) forced += true
+        override suspend fun articles(after: PageCursor?): ArticlesResult {
             asked += after
             // A real one goes to the network and therefore suspends. Without this,
             // the feed never yields between setting "loading" and setting the

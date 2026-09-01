@@ -5,20 +5,11 @@ import java.time.Instant
 /**
  * What time it is, as something that can be handed over.
  *
- * A policy that reads the clock itself cannot be tested at a time other than now,
- * and freshness is entirely about times other than now.
+ * Code that reads the clock itself cannot be tested at a time other than now,
+ * and both of the things that use this -- pinning the window a page is read in,
+ * and knowing when the weather source will next have a reading -- are entirely
+ * about times other than now.
  */
 fun interface Clock {
     fun now(): Instant
-}
-
-/**
- * Whether reaching the network right now costs the reader money.
- *
- * The domain does not know what a mobile connection is; it knows that some
- * refreshes are free and some are charged, and that the difference should change
- * what the app does.
- */
-fun interface DataCost {
-    fun isMetered(): Boolean
 }

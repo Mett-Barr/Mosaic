@@ -6,7 +6,6 @@ import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
-import moozy.mosaic.domain.model.Cadence
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.repository.ArticleRepository
@@ -18,20 +17,13 @@ import org.junit.Test
  * The half of the freshness policy that saves anything. Deciding what "fresh"
  * means costs no data; not making the request does.
  */
-class CachingArticlesTest {
+class ArticlesWithAFallbackTest {
 
     private val noon: Instant = Instant.parse("2026-09-01T12:00:00Z")
     private var now: Instant = noon
-    private var metered = false
 
     private fun caching(network: ArticleRepository, cache: FakeCache = FakeCache()) =
-        CachingArticles(
-            network = network,
-            cache = cache,
-            clock = { now },
-            dataCost = { metered },
-            freshness = Cadence.ARTICLES,
-        )
+        ArticlesWithAFallback(network = network, cache = cache)
 
     @Test
     fun `every ask for the first page goes to the network`() = runTest {
@@ -50,82 +42,6 @@ class CachingArticlesTest {
         // both of those are somebody asking to see the feed.
         assertEquals("nobody asks for the top of the list by accident", 2, network.calls)
         assertEquals(listOf("2"), (second as ArticlesResult.Loaded).articles.map { it.id.value })
-    }
-
-    @Test
-    fun `a page fetched a moment ago is served without asking again`() = runTest {
-        val network = CountingArticles(ArticlesResult.Loaded(listOf(article(1)), next = null))
-        val caching = caching(network)
-
-        caching.articles(after = null)
-        now = noon.plusSeconds(60)
-        val second = caching.articles(after = null)
-
-        assertEquals(1, network.calls)
-        assertEquals(listOf("1"), (second as ArticlesResult.Loaded).articles.map { it.id.value })
-    }
-
-    @Test
-    fun `a page older than the window is asked about again`() = runTest {
-        val network = CountingArticles(
-            ArticlesResult.Loaded(listOf(article(1)), next = null),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val caching = caching(network)
-
-        caching.articles(after = null)
-        now = noon.plusSeconds(16 * 60)
-        val second = caching.articles(after = null)
-
-        assertEquals(2, network.calls)
-        assertEquals(listOf("2"), (second as ArticlesResult.Loaded).articles.map { it.id.value })
-    }
-
-    @Test
-    fun `the same page on mobile data is not asked about again`() = runTest {
-        val network = CountingArticles(
-            ArticlesResult.Loaded(listOf(article(1)), next = null),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val caching = caching(network)
-
-        caching.articles(after = null)
-        metered = true
-        now = noon.plusSeconds(16 * 60)
-        caching.articles(after = null)
-
-        assertEquals("the reader is paying for this one", 1, network.calls)
-    }
-
-    @Test
-    fun `a reader who asks for it again gets a request, cache or no cache`() = runTest {
-        val network = CountingArticles(
-            ArticlesResult.Loaded(listOf(article(1)), next = null),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val caching = caching(network)
-
-        caching.articles(after = null)
-        now = noon.plusSeconds(60)
-        val asked = caching.articles(after = null, force = true)
-
-        assertEquals("a policy is for the app to follow, not to overrule the reader", 2, network.calls)
-        assertEquals(listOf("2"), (asked as ArticlesResult.Loaded).articles.map { it.id.value })
-    }
-
-    @Test
-    fun `asking again on mobile data is still the reader's decision`() = runTest {
-        val network = CountingArticles(
-            ArticlesResult.Loaded(listOf(article(1)), next = null),
-            ArticlesResult.Loaded(listOf(article(2)), next = null),
-        )
-        val caching = caching(network)
-
-        caching.articles(after = null)
-        metered = true
-        caching.articles(after = null, force = true)
-
-        assertEquals("they were told it costs, and asked anyway", 2, network.calls)
     }
 
     @Test
@@ -160,7 +76,10 @@ class CachingArticlesTest {
 
         caching(network, cache).articles(after = null)
         now = noon.plusSeconds(60)
-        val second = caching(CountingArticles(), cache).articles(after = null)
+        // The stored page is only reached through a failure now, which is the
+        // only way it is ever reached at all.
+        val offline = CountingArticles(ArticlesResult.Failed(FeedFailure.Offline()))
+        val second = caching(offline, cache).articles(after = null)
 
         assertEquals(
             "an unreadable page read back as empty is a lie the cache invented",
@@ -240,7 +159,6 @@ class CachingArticlesTest {
             .articles(after = null)
 
         assertEquals(listOf("1"), cache.stored?.articles?.map { it.id.value })
-        assertEquals(noon, cache.stored?.fetchedAt)
     }
 
     private fun article(id: Int) = ArticleItem(
@@ -260,7 +178,7 @@ class CachingArticlesTest {
         private val queue = ArrayDeque(answers.toList())
         var calls = 0
 
-        override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
+        override suspend fun articles(after: PageCursor?): ArticlesResult {
             calls++
             return queue.removeFirstOrNull() ?: error("the feed asked for a page nobody prepared")
         }
