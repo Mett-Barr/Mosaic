@@ -57,8 +57,10 @@ graph TB
   end
   :core:data --> :core:domain
   :feature:detail --> :core:domain
+  :feature:detail --> :core:ui
   :core:ui --> :core:domain
   :feature:feed --> :core:domain
+  :feature:feed --> :core:ui
   :feature:saved --> :core:domain
   :app --> :core:data
   :app --> :core:domain

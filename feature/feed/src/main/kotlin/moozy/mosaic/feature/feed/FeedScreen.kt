@@ -32,8 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import moozy.mosaic.core.ui.readableTime
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
@@ -262,9 +261,7 @@ private fun FeedFailure.readAsHint(): String = when (this) {
     is FeedFailure.Unexpected -> "Something unexpected happened."
 }
 
-private val readableTime: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("d MMM, HH:mm").withZone(ZoneId.systemDefault())
 
-private fun java.time.Instant.readable(): String = readableTime.format(this)
+private fun java.time.Instant.readable(): String = readableTime(this)
 
 private const val ITEMS_BEFORE_THE_END = 3
