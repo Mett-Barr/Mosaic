@@ -64,7 +64,7 @@ class ArticlesWithAFallbackTest {
         val cache = FakeCache()
         val caching = caching(CountingArticles(ArticlesResult.Loaded(listOf(article(2)), next = null)), cache)
 
-        caching.refreshFirstPage()
+        caching.refresh()
 
         assertEquals(listOf("2"), cache.stored?.articles?.map { it.id.value })
     }
@@ -78,7 +78,7 @@ class ArticlesWithAFallbackTest {
         var said = 0
         val watching = launch { caching.changed.collect { said++ } }
         runCurrent()
-        caching.refreshFirstPage()
+        caching.refresh()
         runCurrent()
         watching.cancel()
 
@@ -92,7 +92,7 @@ class ArticlesWithAFallbackTest {
         var said = 0
         val watching = launch { caching.changed.collect { said++ } }
         runCurrent()
-        caching.refreshFirstPage()
+        caching.refresh()
         runCurrent()
         watching.cancel()
 
@@ -261,7 +261,7 @@ class ArticlesWithAFallbackTest {
 
         override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
 
-        override suspend fun refreshFirstPage() = Unit
+        override suspend fun refresh() = Unit
 
         override val changed: Flow<Unit> = emptyFlow()
 

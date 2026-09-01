@@ -44,7 +44,7 @@ internal class NetworkArticleRepository(
     override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
 
     /** Nothing to refresh: every ask already goes to the source. */
-    override suspend fun refreshFirstPage() = Unit
+    override suspend fun refresh() = Unit
 
     override val changed: Flow<Unit> = emptyFlow()
 

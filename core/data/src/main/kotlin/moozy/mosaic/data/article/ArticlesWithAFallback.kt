@@ -66,13 +66,13 @@ internal class ArticlesWithAFallback(
             return fetch() ?: stored?.asResult() ?: ArticlesResult.Failed(FeedFailure.Offline())
         }
         // Something to show, and it came off a disk. Show it, and go and look.
-        scope.launch { refreshFirstPage() }
+        scope.launch { refresh() }
         return stored.asResult()
     }
 
     override suspend fun nextPage(after: PageCursor): ArticlesResult = network.nextPage(after)
 
-    override suspend fun refreshFirstPage() {
+    override suspend fun refresh() {
         val hadOne = cache.read() != null
         if (fetch() != null && hadOne) {
             // Only when it replaced one somebody could be looking at. Announcing

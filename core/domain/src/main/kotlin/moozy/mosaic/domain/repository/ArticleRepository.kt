@@ -53,7 +53,7 @@ interface ArticleRepository {
      * gesture and nothing else: the app starting does not call this, because
      * asking for the first page already does whatever is needed.
      */
-    suspend fun refreshFirstPage()
+    suspend fun refresh()
 
     /**
      * A newer top of the list has replaced the one that was being shown.

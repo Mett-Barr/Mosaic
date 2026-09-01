@@ -159,7 +159,7 @@ class FeedViewModelTest {
             object : ArticleRepository {
                 override suspend fun firstPage() = gate.await()
                 override suspend fun nextPage(after: PageCursor) = gate.await()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
@@ -209,7 +209,7 @@ class FeedViewModelTest {
             object : ArticleRepository {
                 override suspend fun firstPage() = gate.await()
                 override suspend fun nextPage(after: PageCursor) = gate.await()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
@@ -539,7 +539,7 @@ class FeedViewModelTest {
 
         override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
 
-        override suspend fun refreshFirstPage() = Unit
+        override suspend fun refresh() = Unit
 
         override val changed: Flow<Unit> = emptyFlow()
 

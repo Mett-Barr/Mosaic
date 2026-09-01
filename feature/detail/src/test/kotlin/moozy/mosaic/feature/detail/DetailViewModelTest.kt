@@ -95,7 +95,7 @@ class DetailViewModelTest {
             object : ArticleRepository {
                 override suspend fun firstPage(): ArticlesResult = notAsked()
                 override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
                 override suspend fun article(id: ArticleId) = gate.await()
             },
@@ -125,7 +125,7 @@ class DetailViewModelTest {
             object : ArticleRepository {
                 override suspend fun firstPage(): ArticlesResult = notAsked()
                 override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
                 override suspend fun article(id: ArticleId): ArticleResult {
                     yield()
@@ -187,7 +187,7 @@ class DetailViewModelTest {
             object : ArticleRepository {
                 override suspend fun firstPage(): ArticlesResult = notAsked()
                 override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
                 override suspend fun article(id: ArticleId): ArticleResult =
                     if (id.value == "1") slowFirst.await() else ArticleResult.Loaded(article("2", "Second"))
@@ -345,7 +345,7 @@ class DetailViewModelTest {
 
         override suspend fun firstPage(): ArticlesResult = notAsked()
                 override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refreshFirstPage() = Unit
+                override suspend fun refresh() = Unit
                 override val changed: Flow<Unit> = emptyFlow()
 
         override suspend fun article(id: ArticleId): ArticleResult {
