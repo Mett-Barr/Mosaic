@@ -87,6 +87,10 @@ class DetailViewModel @Inject constructor(
         // the reader into something they did not ask for.
         loading?.cancel()
         loading = viewModelScope.launch {
+            // Nothing is on screen, so there is nothing to keep. Leaving the
+            // last article here would let a save meant for this one land on
+            // that one.
+            holding = null
             _state.value = DetailUiState.Loading
             _state.value = when (val result = articles.article(id)) {
                 is ArticleResult.Loaded -> {
