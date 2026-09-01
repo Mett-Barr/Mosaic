@@ -7,11 +7,13 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleResult
+import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.FeedFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -27,7 +29,7 @@ class OneArticleTest {
     private val requests = mutableListOf<HttpRequestData>()
 
     private fun repositoryWith(engine: MockEngine) =
-        NetworkArticleRepository(SpaceflightNewsApi(spaceflightNewsClient(engine)))
+        NetworkArticleRepository(SpaceflightNewsApi(spaceflightNewsClient(engine), Clock { NOW }))
 
     private fun repositoryReturning(body: String) = repositoryWith(
         MockEngine { request ->
@@ -93,5 +95,10 @@ class OneArticleTest {
 
         assertTrue("expected a failure, got $result", result is ArticleResult.Failed)
         assertTrue((result as ArticleResult.Failed).reason is FeedFailure.Unreadable)
+    }
+
+    private companion object {
+        /** The window these tests read is pinned here; none of them care when. */
+        val NOW: Instant = Instant.parse("2026-09-01T09:00:00Z")
     }
 }

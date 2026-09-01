@@ -51,7 +51,8 @@ internal object DataModule {
 
     @Provides
     @Singleton
-    fun spaceflightNewsApi(client: HttpClient): SpaceflightNewsApi = SpaceflightNewsApi(client)
+    fun spaceflightNewsApi(client: HttpClient): SpaceflightNewsApi =
+        SpaceflightNewsApi(client, Clock { Instant.now() })
 
     /**
      * The repository the app sees is the network one wrapped in the freshness
