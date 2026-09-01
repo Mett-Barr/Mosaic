@@ -40,9 +40,9 @@ internal class ArticlePagingSource(
     private val alreadyGiven = mutableSetOf<ArticleId>()
 
     override suspend fun load(params: LoadParams<PageCursor>): LoadResult<PageCursor, ArticleItem> {
-        val key = params.key
-        val answer = if (key == null) articles.firstPage() else articles.nextPage(key)
-        return when (answer) {
+        // Null asks for the top of the list, which is exactly what Paging
+        // means by a refresh with no key. Nothing here has to translate.
+        return when (val answer = articles.articles(after = params.key)) {
             is ArticlesResult.Loaded -> {
                 val fresh = answer.articles.filterNot { it.id in alreadyGiven }
                 alreadyGiven += fresh.map { it.id }

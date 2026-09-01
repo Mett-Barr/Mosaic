@@ -645,45 +645,7 @@ val state = combine(_state, weather.current) { feed, sky ->
 
 **代價** —— 系統回收程序後切回來會重抓一次。這是刻意接受的。
 
-## 26. 一個問題，兩個後果——而不是兩個呼叫者
-
-**這一則是使用者主導的**：他指出「有兩個觸發源就不合理」，而那正是問題所在。
-
-**選了** —— `ArticleRepository` 五個成員，取頁的只有兩個：
-
-```kotlin
-suspend fun firstPage(): ArticlesResult                     // 給我清單頂端
-suspend fun nextPage(after: PageCursor): ArticlesResult     // 給我這之後那頁
-suspend fun refreshFirstPage()                              // 去拿更新的（讀者要求）
-val changed: Flow<Unit>                                     // 換掉了正在被看的那份
-suspend fun article(id: ArticleId): ArticleResult
-```
-
-**問題長什麼樣** —— 冷啟動要「先顯示磁碟上那頁，同時去拿新的」。我第一版把它做成
-**兩個呼叫者**：`PagingSource` 問 `firstPage()`，ViewModel 另外呼叫 `refreshFirstPage()`。
-
-首次安裝時磁碟是空的，兩者塌成同一件事——**兩個一模一樣的請求**。
-
-那不是意外，是「**決定何時花使用者流量**」這個職責被切成兩半的症狀。
-
-**修法不是去重，是收回** —— `firstPage()` 自己承擔兩個後果：手上有磁碟那份就立刻給並
-去拿新的，手上沒有就去拿並等它。**只有 repository 知道手上這份是不是自己剛抓回來的**，
-所以只有它能決定要不要去看。
-
-**`force` 沒有回來** —— 它當初存在，是因為「冷啟動」和「讀者下拉」共用同一個函式，
-需要一個布林分辨。現在它們是**不同的成員**：一個是問句，一個是命令。
-意圖寫在名字上，不是寫在參數上（`DECISIONS.md` 25 拆掉它時的教訓）。
-
-**`changed` 為什麼在第一次到達時不發** —— 沒有人在看舊的那份。發了只會要求畫面
-重畫它已經在畫的東西。
-
-**scope 是注入的，而且活得比畫面久** —— 已經付出去的請求不該因為讀者離開畫面而被取消。
-跟天氣同一個模式（`DECISIONS.md` 24）。
-
-**裝置上驗過兩條路徑**：清空資料後冷啟動（等網路）、`force-stop` 後冷啟動（三秒內就有
-內容，來自磁碟）。
-
-## 27. 分頁的重複在客戶端擋，遺漏擋不住——而且不假裝擋得住
+## 26. 分頁的重複在客戶端擋，遺漏擋不住——而且不假裝擋得住
 
 **選了** —— 保留伺服器的 offset 分頁，在 `ArticlePagingSource` 裡以「這一代已經給過什麼」
 的集合去重。**不做 keyset 游標。**

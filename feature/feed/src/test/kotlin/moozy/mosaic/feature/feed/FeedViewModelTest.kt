@@ -16,8 +16,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.yield
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
@@ -157,10 +155,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun firstPage() = gate.await()
-                override suspend fun nextPage(after: PageCursor) = gate.await()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+                override suspend fun articles(after: PageCursor?) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(),
@@ -207,10 +202,7 @@ class FeedViewModelTest {
         val gate = CompletableDeferred<ArticlesResult>()
         val feed = FeedViewModel(
             object : ArticleRepository {
-                override suspend fun firstPage() = gate.await()
-                override suspend fun nextPage(after: PageCursor) = gate.await()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+                override suspend fun articles(after: PageCursor?) = gate.await()
                 override suspend fun article(id: ArticleId) = notAsked()
             },
             FakeWeather(weather()),
@@ -535,15 +527,7 @@ class FeedViewModelTest {
 
         override suspend fun article(id: ArticleId) = notAsked()
 
-                override suspend fun firstPage(): ArticlesResult = page(after = null)
-
-        override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
-
-        override suspend fun refresh() = Unit
-
-        override val changed: Flow<Unit> = emptyFlow()
-
-        private suspend fun page(after: PageCursor?): ArticlesResult {
+        override suspend fun articles(after: PageCursor?): ArticlesResult {
             asked += after
             // A real one goes to the network and therefore suspends. Without this,
             // the feed never yields between setting "loading" and setting the

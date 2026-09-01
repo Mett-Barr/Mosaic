@@ -11,8 +11,6 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.SerializationException
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
@@ -38,17 +36,7 @@ internal class NetworkArticleRepository(
 ) : ArticleRepository {
 
     // Nothing is cached here, so there is nothing for `force` to step past.
-    /** Nothing is written down here, so there is only ever the one answer. */
-    override suspend fun firstPage(): ArticlesResult = page(after = null)
-
-    override suspend fun nextPage(after: PageCursor): ArticlesResult = page(after)
-
-    /** Nothing to refresh: every ask already goes to the source. */
-    override suspend fun refresh() = Unit
-
-    override val changed: Flow<Unit> = emptyFlow()
-
-    private suspend fun page(after: PageCursor?): ArticlesResult =
+    override suspend fun articles(after: PageCursor?): ArticlesResult =
         when (val answer = asked { api.articles(limit = pageSize, after = after?.value) }) {
             is Answer.Yes -> ArticlesResult.Loaded(
                 articles = answer.value.articles,

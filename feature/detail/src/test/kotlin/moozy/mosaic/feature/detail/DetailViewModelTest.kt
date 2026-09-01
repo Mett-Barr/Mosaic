@@ -11,7 +11,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.yield
-import kotlinx.coroutines.flow.emptyFlow
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
@@ -93,10 +92,7 @@ class DetailViewModelTest {
         val gate = CompletableDeferred<ArticleResult>()
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun firstPage(): ArticlesResult = notAsked()
-                override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId) = gate.await()
             },
             FakeSaved(),
@@ -123,10 +119,7 @@ class DetailViewModelTest {
         )
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun firstPage(): ArticlesResult = notAsked()
-                override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId): ArticleResult {
                     yield()
                     return answers.removeFirst()
@@ -185,10 +178,7 @@ class DetailViewModelTest {
         val slowFirst = CompletableDeferred<ArticleResult>()
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun firstPage(): ArticlesResult = notAsked()
-                override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId): ArticleResult =
                     if (id.value == "1") slowFirst.await() else ArticleResult.Loaded(article("2", "Second"))
             },
@@ -343,10 +333,7 @@ class DetailViewModelTest {
         private val queue = ArrayDeque(results.toList())
         val asked = mutableListOf<ArticleId>()
 
-        override suspend fun firstPage(): ArticlesResult = notAsked()
-                override suspend fun nextPage(after: PageCursor): ArticlesResult = notAsked()
-                override suspend fun refresh() = Unit
-                override val changed: Flow<Unit> = emptyFlow()
+        override suspend fun articles(after: PageCursor?) = notAsked()
 
         override suspend fun article(id: ArticleId): ArticleResult {
             asked += id

@@ -11,8 +11,6 @@ import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.Clock

@@ -17,8 +17,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import moozy.mosaic.data.article.NetworkArticleRepository
-import moozy.mosaic.data.article.ArticlesWithAFallback
-import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.FileSavedArticles
@@ -57,22 +55,19 @@ internal object DataModule {
         SpaceflightNewsApi(client, Clock { Instant.now() })
 
     /**
-     * The repository the app sees is the network one wrapped in the freshness
-     * policy. Nothing above here knows a cache exists; it asks for articles and
-     * sometimes the answer costs nothing.
+     * The source, and nothing between it and the feed.
+     *
+     * There is no cache here on purpose. Pages already loaded stay in memory for
+     * as long as the screen's view model does, which covers rotation, the trip to
+     * an article and time in the background. What a file would add is the case
+     * where the process was killed -- and a list restored from disk cannot be
+     * handed to Paging as a starting point, so it would be shown and then
+     * replaced, which is a flicker rather than a feature.
      */
     @Provides
     @Singleton
-    fun articleRepository(
-        api: SpaceflightNewsApi,
-        @ApplicationContext context: Context,
-    ): ArticleRepository = ArticlesWithAFallback(
-        network = NetworkArticleRepository(api),
-        cache = FileArticleCache(File(context.cacheDir, "articles.json"), Dispatchers.IO),
-        // Outlives every screen, because a refresh already paid for must not be
-        // cancelled by the reader walking away from the screen that asked for it.
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    )
+    fun articleRepository(api: SpaceflightNewsApi): ArticleRepository =
+        NetworkArticleRepository(api)
 
     /**
      * Taipei, because the app has no location permission and asking for one to

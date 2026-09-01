@@ -3,8 +3,6 @@ package moozy.mosaic.feature.feed
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import java.time.Instant
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
@@ -128,14 +126,9 @@ class ArticlePagingSourceTest {
         private val firstPage: ArticlesResult,
         private val nextPages: Map<String, ArticlesResult> = emptyMap(),
     ) : ArticleRepository {
-        override suspend fun firstPage(): ArticlesResult = firstPage
-
-        override suspend fun nextPage(after: PageCursor): ArticlesResult =
-            nextPages[after.value] ?: error("nobody prepared a page after ${after.value}")
-
-        override suspend fun refresh() = Unit
-
-        override val changed: Flow<Unit> = emptyFlow()
+        override suspend fun articles(after: PageCursor?): ArticlesResult =
+            if (after == null) firstPage
+            else nextPages[after.value] ?: error("nobody prepared a page after ${after.value}")
 
         override suspend fun article(id: ArticleId): ArticleResult =
             error("the list does not ask about one article")
