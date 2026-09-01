@@ -31,6 +31,34 @@ class FileSavedArticlesTest {
         FileSavedArticles(file, UnconfinedTestDispatcher())
 
     @Test
+    fun `a saved article with a time that is not a time is left out, not thrown`() = runTest {
+        val file = folder.newFile("saved.json")
+        file.writeText(
+            """[{"id":"1","title":"T","summary":"S","source":"NASA",
+               "url":"https://example.test/1","published_at":"last Tuesday"}]"""
+                .trimIndent(),
+        )
+
+        val store = FileSavedArticles(file, UnconfinedTestDispatcher())
+
+        assertEquals(emptyList<ArticleItem>(), store.saved.first())
+    }
+
+    @Test
+    fun `a saved article the domain refuses is left out, not thrown`() = runTest {
+        val file = folder.newFile("saved.json")
+        file.writeText(
+            """[{"id":"","title":"T","summary":"S","source":"NASA",
+               "url":"https://example.test/1","published_at":"2026-09-01T12:00:00Z"}]"""
+                .trimIndent(),
+        )
+
+        val store = FileSavedArticles(file, UnconfinedTestDispatcher())
+
+        assertEquals(emptyList<ArticleItem>(), store.saved.first())
+    }
+
+    @Test
     fun `an article that was saved can be read back`() = runTest {
         val store = store()
 

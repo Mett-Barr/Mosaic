@@ -2,6 +2,7 @@ package moozy.mosaic.data.saved
 
 import java.io.File
 import java.io.IOException
+import java.time.DateTimeException
 import java.time.Instant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +49,7 @@ internal class FileSavedArticles(
      * reason is kept here so that somebody can be.
      */
     val lastProblem: Flow<String?> = problem.asStateFlow()
-    private val articles = MutableStateFlow(read().map { it.toArticle() })
+    private val articles = MutableStateFlow(read().readable())
 
     override val saved: Flow<List<ArticleItem>> = articles.asStateFlow()
 
@@ -66,7 +67,7 @@ internal class FileSavedArticles(
         writing.withLock {
             val next = change(read())
             withContext(io) { write(next) }
-            articles.value = next.map { it.toArticle() }
+            articles.value = next.readable()
         }
     }
 
@@ -86,6 +87,26 @@ internal class FileSavedArticles(
             problem.value = "the saved list could not be opened: ${unreachable.message}"
             emptyList()
         }
+
+    /**
+     * The rows that can still be an article, and only those.
+     *
+     * A row is dropped rather than the file, because one unreadable entry is not
+     * a reason to lose the rest of somebody's reading list. What makes a row
+     * unreadable is a stored time that will not parse, or a value the domain
+     * refuses -- a file must not be a way in past a constructor.
+     */
+    private fun List<StoredArticle>.readable(): List<ArticleItem> = mapNotNull { row ->
+        try {
+            row.toArticle()
+        } catch (refused: IllegalArgumentException) {
+            problem.value = "a saved article held values this app cannot use: ${refused.message}"
+            null
+        } catch (unreadable: DateTimeException) {
+            problem.value = "a saved article had a time that is not one: ${unreadable.message}"
+            null
+        }
+    }
 
     private fun write(next: List<StoredArticle>) {
         file.parentFile?.mkdirs()

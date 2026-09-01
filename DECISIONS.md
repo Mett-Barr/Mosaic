@@ -370,3 +370,27 @@ repository（那是資料的狀態），兩者不衝突。
 
 **取捨** —— 多一個檔案、多一次啟動時的讀檔。換到的是一次啟動不再無條件付費。
 
+## 18. 檔案讀不回來是「沒有」，不是「爆炸」——而且要接對例外
+
+**選了** —— 三個檔案存放器（文章快取、天氣讀數、閱讀清單）在讀回來時，把
+`SerializationException`、`IllegalArgumentException`、`DateTimeException` 都接住，
+順序也排對。快取整份作廢，閱讀清單只丟掉讀不回來的那一列。
+
+**錯在哪** —— 原本只接 `IllegalArgumentException`，理由是「domain 的 `require` 丟這個」。
+但時間戳是 `Instant.parse` 解的，它丟 **`DateTimeParseException`**——那是 `DateTimeException`，
+`RuntimeException` 的子類，**不是** `IllegalArgumentException`。所以一個壞掉的時間戳
+會直接穿過三層防護，從 `read()` 裡飛出去，把呼叫它的 coroutine 一起帶走。
+
+同一個錯我寫了三次，因為我是照著第一個檔案複製的。
+
+**還有一個順序錯誤** —— `SerializationException` 本身**就是** `IllegalArgumentException`
+的子類，而我把 `IllegalArgumentException` 排在前面。那個 branch 從來沒有執行過，
+它的訊息從來沒有被寫出來過。註解上還寫著相反的話。
+
+**閱讀清單為什麼是丟一列不是丟整份** —— 快取掉了只是一次請求；閱讀清單是讀者自己存的。
+一列讀不回來不是丟掉其餘那些的理由。這跟網路那層對壞掉的 row 的處理是同一個原則。
+
+**這一則是 Codex 找到的。** 它讀 diff 時直接指著那個 catch 問「你確定 `Instant.parse`
+丟的是這個嗎」。六個測試寫下去全紅。**這就是用第二個模型的理由**——同一個模型再讀一次，
+會再確認一次自己寫下的假設。
+

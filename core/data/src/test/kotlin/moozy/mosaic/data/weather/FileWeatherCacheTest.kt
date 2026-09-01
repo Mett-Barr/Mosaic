@@ -64,6 +64,30 @@ class FileWeatherCacheTest {
         assertNull(cache(file).read())
     }
 
+    @Test
+    fun `a time that is not a time reads as nothing rather than as a throw`() = runTest {
+        val file = folder.newFile("weather.json")
+        file.writeText(
+            """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
+               "measured_at":"the day before yesterday","asked_at":"2026-09-01T12:00:00Z"}"""
+                .trimIndent(),
+        )
+
+        assertNull(cache(file).read())
+    }
+
+    @Test
+    fun `an unreadable moment of asking reads as nothing too`() = runTest {
+        val file = folder.newFile("weather.json")
+        file.writeText(
+            """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
+               "measured_at":"2026-09-01T02:30:00Z","asked_at":"soon"}"""
+                .trimIndent(),
+        )
+
+        assertNull(cache(file).read())
+    }
+
     private fun weather() = Weather(
         place = "Taipei",
         temperature = 26,
