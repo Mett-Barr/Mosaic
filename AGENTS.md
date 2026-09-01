@@ -147,9 +147,8 @@ CI 在 push 與 PR 跑同一道 gate，那才是唯一被機器保證的一層�
 
 ## 禁止事項
 
-1. **不得為了讓 gate 變綠而修改或刪除測試。** 判準是**為什麼改**，不是**有沒有改**：
-   測試因為實作有錯而變紅 → 改實作；測試因為型別被重構換掉而編譯不過 → 改斷言、指向同一個行為。
-   前者要人審，後者不用——把後者也送審只會讓人審變成蓋章。
+1. **不得為了讓 gate 變綠而修改或刪除測試。** 判準是**為什麼改**而非**有沒有改**：實作有錯而變紅 →
+   改實作，要人審；型別被重構換掉而編譯不過 → 改斷言指向同一行為，不用。
 2. **不得修改 `gradle/libs.versions.toml` 的版本**。依賴升級是獨立的 `build(deps)` commit。
 3. **不得修改 `.github/workflows/`**。
 4. **不得 squash。** history 是本專案的交付物之一。
@@ -183,7 +182,7 @@ Assisted-by: LLM Claude Code
 | `AGENTS.md` | 前瞻·規則 | 本檔 |
 | `CLAUDE.md` | — | 只有一行 `@AGENTS.md`。Claude Code 讀 `CLAUDE.md` 而非 `AGENTS.md`（[官方文件](https://code.claude.com/docs/en/memory)），需要 import 橋接 |
 | `DECISIONS.md` | 當下·取捨 | 輕量版 [ADR](https://adr.github.io/)：選了什麼·考慮過什麼·取捨是什麼 |
-| `AI_USAGE.md` | 回顧·紀錄 | 實際發生了什麼：接受／拒絕／重寫。**上限一頁**，逐輪原始紀錄在 `docs/ai-review-log.md` |
+| `AI_USAGE.md` | 回顧·紀錄 | 接受／拒絕／重寫。**上限一頁**，逐輪紀錄在 `docs/ai-review-log.md` |
 
 **語言**：文件用中文，**識別字、程式碼註解、commit 訊息一律英文**。
 分界線是「這段字會不會出現在程式碼裡」——會的話跟著程式語言走，不會的話跟著讀者走。
@@ -195,8 +194,8 @@ Assisted-by: LLM Claude Code
 規則與實際做法不符時，**改文件或改做法，不要讓兩者並存**。
 一份寫了卻沒在跑的規則比沒有規則更糟——它讓讀者無法判斷 history 裡哪些是真的。
 
-**篇幅上限 200 行**（[Claude Code 官方建議](https://code.claude.com/docs/en/best-practices)
-的 *"target under 200 lines"*）。更關鍵的依據是
+**篇幅上限 200 行**（[官方建議](https://code.claude.com/docs/en/best-practices)的
+*"target under 200 lines"*）。更關鍵的依據是
 [arXiv:2602.11988](https://arxiv.org/abs/2602.11988)：context file **平均不提升任務
 成功率，卻讓推理成本增加 20% 以上**——agent 是忠實遵守而非忽略這些指令，多餘的內容
 讓它擴大探索。新增一條規則前先問：**拿掉它會讓 agent 犯錯嗎？** 不會就別加。
