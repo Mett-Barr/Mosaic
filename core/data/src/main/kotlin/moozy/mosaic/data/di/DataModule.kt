@@ -86,7 +86,11 @@ internal object DataModule {
             place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
             clock = Clock { Instant.now() },
             dataCost = DataCost { context.isOnMeteredConnection() },
-            cache = FileWeatherCache(File(context.filesDir, "weather.json"), Dispatchers.IO),
+            // cacheDir, alongside the articles, because a reading is reproducible
+            // by asking again: the system may delete it when storage runs short
+            // and nothing is lost but one request. filesDir would have claimed it
+            // was the reader's, which it is not.
+            cache = FileWeatherCache(File(context.cacheDir, "weather.json"), Dispatchers.IO),
         )
 
     /**

@@ -16,6 +16,18 @@ import java.time.Instant
  * and so that the metered window cannot accidentally be made the shorter one --
  * which would spend more data than having no policy at all.
  */
+/**
+ * How long an answer stays good enough to reuse.
+ *
+ * What this measures is **when it was asked for**, not when the thing it
+ * describes happened. "Fifteen minutes" is a promise not to ask again inside
+ * fifteen minutes; it is not a promise that the answer is at most fifteen
+ * minutes old. For the weather those differ: Open-Meteo's current conditions
+ * come from a model that steps every fifteen minutes, so a reading fetched a
+ * moment ago may already describe a moment further back. The card says what it
+ * was told and the policy governs the asking, which is the one of the two this
+ * app can actually control.
+ */
 data class Freshness(
     val staleAfter: Duration,
     val staleAfterOnMeteredData: Duration,
