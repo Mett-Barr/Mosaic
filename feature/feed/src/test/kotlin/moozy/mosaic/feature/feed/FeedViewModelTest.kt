@@ -7,7 +7,11 @@ import java.util.TimeZone
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -56,6 +60,44 @@ class FeedViewModelTest {
     fun releaseDispatcher() {
         TimeZone.setDefault(deviceZone)
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `nothing is asked for until somebody is watching`() = runTest {
+        val articles = FakeArticles(ArticlesResult.Loaded(listOf(article(1)), null))
+        val weather = CountingWeather(WeatherResult.Loaded(weather()))
+
+        FeedViewModel(articles, weather)
+        yield()
+
+        // Constructing a view model is not a reason to spend somebody's data.
+        assertEquals("nothing was watching", 0, articles.asked.size)
+        assertEquals(0, weather.asked)
+    }
+
+    @Test
+    fun `coming back to the screen asks the weather again`() = runTest {
+        val weather = CountingWeather(WeatherResult.Loaded(weather()))
+        val feed = FeedViewModel(FakeArticles(ArticlesResult.Loaded(listOf(article(1)), null)), weather)
+
+        watch(feed)
+        // Long enough for the subscription to lapse, as leaving the screen does.
+        advanceTimeBy(6_000)
+        watch(feed)
+
+        assertEquals("returning to the screen is the trigger", 2, weather.asked)
+    }
+
+    @Test
+    fun `coming back does not reload a list the reader is already in`() = runTest {
+        val articles = FakeArticles(ArticlesResult.Loaded(listOf(article(1)), null))
+        val feed = FeedViewModel(articles, FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
+
+        watch(feed)
+        advanceTimeBy(6_000)
+        watch(feed)
+
+        assertEquals("the list must not move under them", 1, articles.asked.size)
     }
 
     @Test
@@ -472,6 +514,13 @@ class FeedViewModelTest {
         assertEquals(listOf(null, null), repository.asked)
     }
 
+    /** Somebody looks at the screen, then stops -- which is what leaving it does. */
+    private suspend fun TestScope.watch(feed: FeedViewModel) {
+        val watching = launch { feed.state.collect {} }
+        runCurrent()
+        watching.cancel()
+    }
+
     private fun feedOf(vararg results: ArticlesResult) =
         FeedViewModel(FakeArticles(*results), FakeWeather(WeatherResult.Failed(FeedFailure.Offline())))
 
@@ -484,6 +533,17 @@ class FeedViewModelTest {
         measuredAt = Instant.parse("2026-09-01T02:30:00Z"),
         stepsEvery = Duration.ofMinutes(15),
     )
+
+    private class CountingWeather(private val result: WeatherResult) : WeatherRepository {
+        var asked = 0
+            private set
+
+        override suspend fun current(): WeatherResult {
+            asked++
+            yield()
+            return result
+        }
+    }
 
     private class FakeWeather(private val result: WeatherResult) : WeatherRepository {
         override suspend fun current(): WeatherResult {

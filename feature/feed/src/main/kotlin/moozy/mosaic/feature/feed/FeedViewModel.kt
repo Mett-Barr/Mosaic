@@ -6,8 +6,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
@@ -30,17 +32,42 @@ class FeedViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<FeedUiState>(FeedUiState.Loading)
-    val state: StateFlow<FeedUiState> = _state.asStateFlow()
+
+    /**
+     * Work starts when somebody is watching, and only then.
+     *
+     * Not in `init`: a view model that fetches when it is constructed fetches
+     * whether or not a screen exists to show the result, and this one is scoped
+     * to the root destination -- constructed once and then alive for the rest of
+     * the session. That is also why `init` cannot be the whole story: it runs
+     * once, and the reader comes back to this screen many times.
+     *
+     * `onStart` runs on every new subscription, and the screen resubscribes when
+     * it returns to the foreground. So returning is the trigger, and it costs
+     * nothing when nothing is due: the weather repository answers from what it
+     * already holds unless the source has produced a new reading, and the
+     * articles are only asked for when there are none on screen.
+     */
+    val state: StateFlow<FeedUiState> = _state
+        .onStart {
+            // Not on every return: replacing the list under a reader who is
+            // somewhere in it is worse than a list a few minutes old. A screen
+            // showing nothing, or showing a failure, has nothing to lose.
+            if (_state.value !is FeedUiState.Content) load(from = null)
+            askTheWeather()
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WATCHING_GRACE), FeedUiState.Loading)
 
     private var next: PageCursor? = null
     private var loading = false
     private var sky: WeatherHeadline? = null
 
-    init {
-        load(from = null)
-        // Asked for alongside the articles rather than after them: the two sources
-        // have nothing to do with each other, and making the reader wait for the
-        // weather before seeing the news would be inventing a dependency.
+    /**
+     * Asked for alongside the articles rather than after them: the two sources
+     * have nothing to do with each other, and making the reader wait for the
+     * weather before seeing the news would be inventing a dependency.
+     */
+    private fun askTheWeather() {
         viewModelScope.launch {
             when (val reading = weather.current()) {
                 is WeatherResult.Loaded -> {
@@ -71,6 +98,11 @@ class FeedViewModel @Inject constructor(
     fun refresh() {
         next = null
         load(from = null, force = true)
+        // The reader pulled the whole screen down, not only the list. This
+        // cannot invent a reading the source has not produced -- pulling down
+        // twice inside one fifteen-minute step shows the same temperature both
+        // times, and that is the honest answer rather than a broken one.
+        askTheWeather()
     }
 
     /** Ask for the page after the last one, if the source said there is one. */
@@ -169,3 +201,6 @@ class FeedViewModel @Inject constructor(
 }
 
 private const val SOMETHING_WENT_WRONG = "Something went wrong."
+
+/** Long enough to survive a rotation, short enough not to outlive the screen. */
+private const val WATCHING_GRACE = 5_000L
