@@ -1,15 +1,10 @@
 package moozy.mosaic.data.article
 
-import java.time.Instant
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
-import moozy.mosaic.domain.model.Cadence
-import moozy.mosaic.domain.model.Clock
-import moozy.mosaic.domain.model.DataCost
 import moozy.mosaic.domain.model.FeedFailure
-import moozy.mosaic.domain.model.Freshness
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.repository.ArticleRepository
 
@@ -17,7 +12,6 @@ import moozy.mosaic.domain.repository.ArticleRepository
 internal data class CachedArticles(
     val articles: List<ArticleItem>,
     val next: PageCursor?,
-    val fetchedAt: Instant,
     /**
      * How many rows the page lost. Kept because a page of nothing but unusable
      * rows is an error, and one written down without this reads back as a page
@@ -32,37 +26,25 @@ internal interface ArticleCache {
 }
 
 /**
- * The half of the freshness policy that saves anything.
+ * What the feed shows when the request for it fails.
  *
- * Only the top of the list is cached. That is what opening the app asks for, so
- * it is the request worth not making; a continuation is a question about what
- * comes after something the reader is already holding, and answering it from an
- * hour ago produces a different list rather than the next page of this one.
+ * Not a freshness policy. Every ask for a first page goes to the network,
+ * because the only two things that ask are the app starting and the reader
+ * pulling the list down, and neither of those is waste. What is written down
+ * is what the reader sees when the network cannot answer -- the same promise
+ * the saved articles make, one layer up: something readable beats an apology.
  *
- * When the network fails and there is a page here, the page wins. It is the same
- * promise the saved articles make, one layer up: something the reader can read
- * beats an apology.
+ * Only the top of the list is kept. A continuation is a question about what
+ * comes after something the reader is already holding, and an old answer to it
+ * is a different list rather than the next page of this one.
  */
-internal class CachingArticles(
+internal class ArticlesWithAFallback(
     private val network: ArticleRepository,
     private val cache: ArticleCache,
-    private val clock: Clock,
-    private val dataCost: DataCost,
-    private val freshness: Freshness = Cadence.ARTICLES,
 ) : ArticleRepository {
 
-    override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult {
+    override suspend fun articles(after: PageCursor?): ArticlesResult {
         if (after != null) return network.articles(after)
-
-        val cached = cache.read()
-        // `force` is a reader asking again. The policy stands aside for that; it
-        // exists to stop the app spending their data unasked, not to decline when
-        // they ask.
-        if (cached != null && !force &&
-            !freshness.isStale(cached.fetchedAt, clock.now(), dataCost.isMetered())
-        ) {
-            return cached.asResult()
-        }
 
         return when (val fresh = network.articles(after = null)) {
             is ArticlesResult.Loaded -> {
@@ -70,14 +52,13 @@ internal class CachingArticles(
                     CachedArticles(
                         articles = fresh.articles,
                         next = fresh.next,
-                        fetchedAt = clock.now(),
                         dropped = fresh.dropped,
                     ),
                 )
                 fresh
             }
 
-            is ArticlesResult.Failed -> cached?.asResult() ?: fresh
+            is ArticlesResult.Failed -> cache.read()?.asResult() ?: fresh
         }
     }
 

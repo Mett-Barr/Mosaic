@@ -17,7 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import moozy.mosaic.data.article.NetworkArticleRepository
-import moozy.mosaic.data.article.CachingArticles
+import moozy.mosaic.data.article.ArticlesWithAFallback
 import moozy.mosaic.data.article.FileArticleCache
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
@@ -27,7 +27,6 @@ import moozy.mosaic.data.weather.OpenMeteoWeather
 import moozy.mosaic.data.weather.Place
 import moozy.mosaic.data.weather.openMeteoClient
 import moozy.mosaic.domain.model.Clock
-import moozy.mosaic.domain.model.DataCost
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
 import moozy.mosaic.domain.repository.WeatherRepository
@@ -67,11 +66,9 @@ internal object DataModule {
     fun articleRepository(
         api: SpaceflightNewsApi,
         @ApplicationContext context: Context,
-    ): ArticleRepository = CachingArticles(
+    ): ArticleRepository = ArticlesWithAFallback(
         network = NetworkArticleRepository(api),
         cache = FileArticleCache(File(context.cacheDir, "articles.json"), Dispatchers.IO),
-        clock = Clock { Instant.now() },
-        dataCost = DataCost { context.isOnMeteredConnection() },
     )
 
     /**
@@ -108,11 +105,3 @@ internal object DataModule {
         FileSavedArticles(File(context.filesDir, "saved-articles.json"), Dispatchers.IO)
 }
 
-/**
- * Whether this connection is one the reader is paying for.
- *
- * Unknown counts as metered. Guessing wrong in that direction costs a slightly
- * staler feed; guessing wrong the other way spends somebody's data.
- */
-private fun Context.isOnMeteredConnection(): Boolean =
-    getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true

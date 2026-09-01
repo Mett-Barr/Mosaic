@@ -78,7 +78,7 @@ class FeedViewModel @Inject constructor(
 
     fun refresh() {
         next = null
-        load(from = null, force = true)
+        load(from = null)
     }
 
     /** Ask for the page after the last one, if the source said there is one. */
@@ -86,13 +86,13 @@ class FeedViewModel @Inject constructor(
         load(from = next ?: return)
     }
 
-    private fun load(from: PageCursor?, force: Boolean = false) {
+    private fun load(from: PageCursor?) {
         if (loading) return
         loading = true
         val before = _state.value
         viewModelScope.launch {
             _state.value = beganLoading(before, from)
-            _state.value = when (val result = articles.articles(after = from, force = force)) {
+            _state.value = when (val result = articles.articles(after = from)) {
                 is ArticlesResult.Loaded -> loaded(result, before, from)
                 is ArticlesResult.Failed -> failed(result.reason, before, from)
             }

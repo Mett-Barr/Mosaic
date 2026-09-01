@@ -20,12 +20,12 @@ import moozy.mosaic.domain.model.PageCursor
 interface ArticleRepository {
 
     /**
-     * [force] is a reader saying they want a newer answer than the one that would
-     * otherwise be given. Whatever policy sits between here and the network is
-     * expected to step aside: a policy exists so the app does not spend somebody's
-     * data without being asked, not so it can decline when they do ask.
+     * There is no flag for insisting, because there is nothing to insist past.
+     * Only two things ask for a first page -- the app starting and the reader
+     * pulling the list down -- and both are somebody asking to see the feed.
+     * What is stored is shown when a request fails, not instead of making one.
      */
-    suspend fun articles(after: PageCursor?, force: Boolean = false): ArticlesResult
+    suspend fun articles(after: PageCursor?): ArticlesResult
 
     /**
      * One article, for a reader who opened it.

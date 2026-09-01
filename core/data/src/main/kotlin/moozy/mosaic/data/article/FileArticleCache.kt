@@ -2,8 +2,8 @@ package moozy.mosaic.data.article
 
 import java.io.File
 import java.io.IOException
-import java.time.DateTimeException
 import java.time.Instant
+import java.time.DateTimeException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -107,7 +107,6 @@ internal class FileArticleCache(
 private data class StoredPage(
     val articles: List<StoredCachedArticle>,
     val next: String? = null,
-    @SerialName("fetched_at") val fetchedAt: String,
     val dropped: Int = 0,
 )
 
@@ -125,7 +124,6 @@ private data class StoredCachedArticle(
 private fun CachedArticles.stored() = StoredPage(
     articles = articles.map { it.stored() },
     next = next?.value,
-    fetchedAt = fetchedAt.toString(),
     dropped = dropped,
 )
 
@@ -142,7 +140,6 @@ private fun ArticleItem.stored() = StoredCachedArticle(
 private fun StoredPage.toCached() = CachedArticles(
     articles = articles.map { it.toArticle() },
     next = next?.let(::PageCursor),
-    fetchedAt = Instant.parse(fetchedAt),
     dropped = dropped,
 )
 

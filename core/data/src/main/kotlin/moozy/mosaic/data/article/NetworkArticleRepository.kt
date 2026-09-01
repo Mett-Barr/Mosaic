@@ -36,7 +36,7 @@ internal class NetworkArticleRepository(
 ) : ArticleRepository {
 
     // Nothing is cached here, so there is nothing for `force` to step past.
-    override suspend fun articles(after: PageCursor?, force: Boolean): ArticlesResult =
+    override suspend fun articles(after: PageCursor?): ArticlesResult =
         when (val answer = asked { api.articles(limit = pageSize, after = after?.value) }) {
             is Answer.Yes -> ArticlesResult.Loaded(
                 articles = answer.value.articles,
