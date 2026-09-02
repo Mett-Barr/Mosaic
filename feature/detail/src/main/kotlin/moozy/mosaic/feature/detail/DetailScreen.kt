@@ -100,11 +100,11 @@ fun DetailScreen(
  * those bounds before it knows what is in them -- the article is still being
  * fetched when the transition starts.
  *
- * Nothing is above this screen and no inset has been subtracted from it: the
- * frame it sits in hands it every edge (DECISIONS.md 34). So the way back is
+ * Nothing is above this screen and no inset has been subtracted from it: it is
+ * handed every edge and no frame at all (DECISIONS.md 34). So the way back is
  * drawn here, over whichever of the three states is underneath -- and here rather
- * than in that frame because whether the arrow needs protecting from a photograph
- * is a question only this screen can answer.
+ * than a level up because whether the arrow needs protecting from a photograph is
+ * a question only this screen can answer.
  */
 @Composable
 fun DetailScreen(
@@ -125,18 +125,30 @@ fun DetailScreen(
     // third only has a photograph when the article came with one -- `imageUrl` is
     // nullable, and plenty of them arrive without it.
     val overPicture = state is DetailUiState.Content && state.article.imageUrl != null
-    Box(container.fillMaxSize()) {
-        // One branch per state, each naming what it draws: [DetailUiState] is
-        // sealed, so a state added later without a picture to go with it will
-        // not build.
-        when (state) {
-            DetailUiState.Loading -> LoadingState()
+    // The opaque layer is the container's own, and it used to be a full-screen
+    // frame outside it. Outside, it did not travel: the rectangle shrank back
+    // towards the card with a screenful of this colour still standing behind it,
+    // so the article never appeared to leave -- it left a page-sized hole where
+    // it had been. Inside, the layer that hides the list is the layer that moves,
+    // and at this end of the flight it is the whole display anyway, which is what
+    // makes the move free (DECISIONS.md 38).
+    Surface(
+        modifier = container.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            // One branch per state, each naming what it draws: [DetailUiState] is
+            // sealed, so a state added later without a picture to go with it will
+            // not build.
+            when (state) {
+                DetailUiState.Loading -> LoadingState()
 
-            is DetailUiState.Failed -> FailedState(state, onRetry, onBack)
+                is DetailUiState.Failed -> FailedState(state, onRetry, onBack)
 
-            is DetailUiState.Content -> Article(id, state, onBack, onKeep, onLetGo)
+                is DetailUiState.Content -> Article(id, state, onBack, onKeep, onLetGo)
+            }
+            WayBack(onBack = onBack, overPicture = overPicture)
         }
-        WayBack(onBack = onBack, overPicture = overPicture)
     }
 }
 

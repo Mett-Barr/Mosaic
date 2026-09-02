@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
@@ -103,6 +104,27 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
  * The clip declared here is not only this rectangle's. It is also the shape
  * anything nested inside it is cut to while the transition runs, which is what
  * [sharedArticleImage] leans on instead of declaring corners of its own.
+ *
+ * **The two ends are lined up by their top edges and not by their middles.**
+ * `scaleToBounds` measures each end once at the size it will finish at and then
+ * scales that one drawing into whatever the bounds are on this frame; with the
+ * default `ContentScale.FillWidth`, an article measured for the whole display and
+ * scaled to a card's width is several times taller than the card it has to fit
+ * in. The default [Alignment] of `Center` would therefore park the middle of the
+ * article inside the card and push the picture off the top -- while the picture
+ * is flying separately to the top of that same card, so the two would spend the
+ * whole transition disagreeing about where the top is. Top edge to top edge is
+ * the one alignment they both mean.
+ *
+ * **Scaled and not remeasured**, even though this rectangle now paints the
+ * article's background (DECISIONS.md 38) and the documentation says
+ * [ResizeMode.RemeasureToBounds] *"works best for background"*. The rest of that
+ * sentence is why not: it *"does not work well for layouts with specific size
+ * requirements. Such layouts include Text, and bespoke layouts that could result
+ * in overlapping children when constrained to too small of a size"* -- which is
+ * the rest of what is in here, a whole scrollable article, and it would be
+ * re-measured against a card's constraints on every frame. The background is the
+ * smaller half of the cargo.
  */
 @Composable
 fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
@@ -117,7 +139,7 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
                 animatedVisibilityScope = motion.visibility,
                 enter = fadeIn(),
                 exit = fadeOut(),
-                resizeMode = ResizeMode.scaleToBounds(),
+                resizeMode = ResizeMode.scaleToBounds(alignment = Alignment.TopCenter),
                 clipInOverlayDuringTransition = overlay,
             )
             .roundedBy(radius)

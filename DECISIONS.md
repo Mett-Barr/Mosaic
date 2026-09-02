@@ -1300,3 +1300,77 @@ alpha 是「scene transition 現在在哪個 `EnterExitState`」的函數——�
 以及 `PreEnter`／`PostExit` 的 alpha 是 0。**沒有**從原始碼重建出「文章已經畫在螢幕上、
 scene transition 卻停在 `PreEnter`」的那條狀態序列——這個專案沒有截圖測試，
 箭頭現在是不是真的不透明，只有裝置能回答。
+
+---
+
+## 38. 不透明的那一層搬進會飛的矩形裡，因為畫面上只該有一個矩形
+
+**症狀** —— 從文章返回時，文章沒有縮回卡片。容器確實在縮，但它縮的時候背後還立著
+一整片螢幕大小的 `background`：讀者看到的是一圈比目標卡片大得多的邊界，
+以及一整頁原地淡掉。
+
+**根因** —— 那片背景不在容器裡面。`Mosaic.kt` 是 `EdgeToEdgeScreen { DetailScreen(...) }`、
+`EdgeToEdgeScreen` 是 `Surface(Modifier.fillMaxSize(), color = background)`，
+而 `sharedArticleCard` 掛在 `DetailScreen` **裡面**。所以畫面上一直有兩個矩形：
+一個會飛，一個不會。`sharedBounds` 只裁它自己那一個——飛行途中由
+`clipInOverlayDuringTransition` 裁，靜止時由 `roundedBy` 的 `graphicsLayer` 裁——
+第二個矩形從頭到尾都不在那個裁切範圍內。
+
+**選了** —— 把 `EdgeToEdgeScreen` 整個刪掉，改由 `DetailScreen` 在自己的容器 bounds
+裡畫那一層：`Surface(modifier = container.fillMaxSize(), color = background)`。
+從外框一路到卡片，只剩一個矩形。
+
+### 這一則取代第 33 則關於「哪一層不透明」的結論，但不改寫它
+
+33 則講的**只讓一層淡**今天仍然成立，`CardBecomesArticle` 一行都沒動。被取代的是它
+順帶固定下來的另一件事：**那個會淡的層是螢幕大小的外框**。`EdgeToEdgeScreen` 的註解
+把這件事寫成了它存在的理由——「文章唯一真正需要外框給的東西：一層自己的不透明」，
+而 33 則給的理由是「透明的文章會淡在一份還讀得出來的清單上」。
+
+**那個理由沒有錯，錯的是它被放在哪裡。** 遮住清單的那一層必須跟著矩形走，因為容器
+轉場的定義就是「一個矩形從卡片長成整頁」；一層不跟著走的不透明，等於宣告那個矩形
+只是裝飾。搬進去之後兩件事同時成立：**文章那一端的容器本來就是整個螢幕**，所以靜止
+時看到的顏色一個 pixel 都沒變；而飛行途中不透明的範圍正好是矩形自己，清單在矩形
+**外面**看得見——那不是把 33 則修掉的缺陷放回來，那正是容器轉場該有的樣子。
+
+**33 則原文保留。** 它記的是當時的判斷，而當時 `EdgeToEdgeScreen` 確實是唯一放得下
+那一層的地方（第 34 則同一個 commit 才剛把文章的外框拆掉）。history 是交付物。
+
+### 對齊改成 `TopCenter`
+
+`ResizeMode.scaleToBounds()` 的預設是 `ContentScale.FillWidth` ＋ `Alignment.Center`。
+`scaleToBounds` 只量一次——量在它最後要成為的尺寸——之後每一幀把那張已經量好的畫面
+縮放進當下的 bounds。以 FillWidth 把整頁文章縮到卡片寬度，高度是卡片的好幾倍，
+`Center` 於是把**文章的中段**擺進卡片裡，圖片被推到上緣外面；而圖片自己是另一個
+shared element，同一時間正飛向那張卡片的**頂端**。兩者整段轉場都在對「上面是哪裡」
+持不同意見。改成 `TopCenter`，頭條卡片的 16:9 圖片與文章的 16:9 圖片剛好重合。
+
+### resize mode 維持 `scaleToBounds`
+
+文件同一段的兩句話往兩個方向拉。`RemeasureToBounds` *"works best for background"*，
+而這個矩形現在正好開始畫背景了；但同一段也說它 *"does not work well for layouts with
+specific size requirements. Such layouts include Text, and bespoke layouts that could
+result in overlapping children when constrained to too small of a size"*。容器裡除了
+背景還有一整篇可捲動的文章：標題、摘要、三個句子那麼長的按鈕。把它們每一幀重新用
+卡片大小的 constraints 量一次，正是那句話點名的失敗案例，而且是每一幀一次完整
+re-layout。**背景是這批貨裡比較小的那一半**，所以跟著 Text 那半邊走。
+
+**當時還考慮**
+
+- **`EdgeToEdgeScreen` 留著，只是不畫背景。** 那它就只剩 `content()` 一行，一個什麼
+  都不做的間接層。刪掉，理由搬到 `Mosaic.kt` 的呼叫點與 `Screen` 的註解裡。
+- **用 `Modifier.background()` 而不是 `Surface`。** 少一個 layout node、少一層 clip。
+  沒選：Material 3 的 `Surface` 還掛著一個 `pointerInput(Unit) {}`，轉場途中兩個 entry
+  都活著，換成 `background()` 等於讓一次點擊可能落到底下的清單上。維持原本的行為比
+  省一個 node 重要。
+- **把 `CardBecomesArticle` 的 `fadeIn()` 一起拿掉。** 現在整個文章畫面都在容器裡，
+  而 `sharedBounds` 自己就有 `enter`／`exit`，scene 那一層的淡看起來是多的（第 37 則
+  已經記過這兩層會相乘）。沒動：`sharedBounds` 那一層有閘
+  （`isEnabled = { sharedContentState.isMatchFound }`），沒配對到卡片時它整層關掉，
+  scene 那一層就成了唯一會淡的東西。拿掉它，未配對的情況會變成硬切。
+
+**取捨與限制** —— **一樣沒有機器驗證。** `build detekt lint` 全綠只證明它會編譯。
+可以從原始碼確定的是：背景過去確實在 shared bounds 外面（三個檔案讀得出來）、
+`scaleToBounds` 那兩個預設值、以及文件那兩句話。**不能確定**的是它動起來好不好看——
+這個專案沒有截圖測試，沒有人在裝置上看過。尤其飛行途中清單會從矩形外面露出來，
+那是刻意的；如果在裝置上覺得太吵，第一個該懷疑的是這一則，不是 33 則。

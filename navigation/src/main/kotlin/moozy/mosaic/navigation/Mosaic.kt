@@ -121,12 +121,17 @@ fun Mosaic(modifier: Modifier = Modifier) {
                         // rather than sit in a bar above it. The screen draws that
                         // arrow itself, because only it knows whether there is a
                         // photograph behind it (DECISIONS.md 34).
-                        EdgeToEdgeScreen {
-                            DetailScreen(
-                                id = ArticleId(key.id),
-                                onBack = { backStack.removeLastOrNull() },
-                            )
-                        }
+                        //
+                        // And no frame around it either. The one this entry used
+                        // to wrap the article in was a full-screen opaque layer,
+                        // and full-screen is exactly what the growing rectangle is
+                        // not for most of the transition -- so the screen paints
+                        // that layer inside its own bounds instead, where it
+                        // shrinks back to the card with them (DECISIONS.md 38).
+                        DetailScreen(
+                            id = ArticleId(key.id),
+                            onBack = { backStack.removeLastOrNull() },
+                        )
                     }
                 }
             },
