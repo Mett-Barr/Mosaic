@@ -3,6 +3,7 @@ package moozy.mosaic.feature.feed
 import androidx.paging.testing.asSnapshot
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,6 +19,7 @@ import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
@@ -98,6 +100,38 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `the three days ahead reach the screen as a weekday and a temperature`() = runTest {
+        val weather = FakeWeather(reading().copy(days = threeDays()))
+        val feed = FeedViewModel(CountingArticles(page(1)), weather)
+
+        val watching = launch { feed.weather.collect {} }
+        runCurrent()
+        val shown = feed.weather.value
+        watching.cancel()
+
+        // 2026-09-01 is a Tuesday, and it is a Tuesday in English wherever the
+        // phone thinks it is -- the same rule the timestamps follow.
+        assertEquals(listOf("Tue", "Wed", "Thu"), shown?.days?.map { it.day })
+        // The high, and only the high: a column with two numbers in it is a
+        // table, and the strip is there to say which way the week is going.
+        assertEquals(listOf("32°", "29°", "33°"), shown?.days?.map { it.temperature })
+        assertEquals(listOf(Sky.CLOUDY, Sky.RAIN, Sky.CLEAR), shown?.days?.map { it.sky })
+    }
+
+    @Test
+    fun `a reading with no days ahead is a card with no strip under it`() = runTest {
+        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(reading()))
+
+        val watching = launch { feed.weather.collect {} }
+        runCurrent()
+        val shown = feed.weather.value
+        watching.cancel()
+
+        assertEquals("26°", shown?.temperature)
+        assertEquals(emptyList<DayHeadline>(), shown?.days)
+    }
+
+    @Test
     fun `pulling asks the source again`() = runTest {
         val articles = CountingArticles(page(1), page(2))
         val feed = FeedViewModel(articles, FakeWeather())
@@ -125,6 +159,12 @@ class FeedViewModelTest {
         url = "https://example.com/$id",
         imageUrl = null,
         publishedAt = Instant.parse("2026-08-31T10:00:00Z"),
+    )
+
+    private fun threeDays() = listOf(
+        ForecastDay(LocalDate.parse("2026-09-01"), high = 32, low = 25, sky = Sky.CLOUDY),
+        ForecastDay(LocalDate.parse("2026-09-02"), high = 29, low = 24, sky = Sky.RAIN),
+        ForecastDay(LocalDate.parse("2026-09-03"), high = 33, low = 26, sky = Sky.CLEAR),
     )
 
     private fun reading() = Weather(

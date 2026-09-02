@@ -3,9 +3,11 @@ package moozy.mosaic.data.weather
 import java.io.File
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 import org.junit.Assert.assertEquals
@@ -91,6 +93,53 @@ class FileWeatherStoreTest {
 
         assertNull(store(file).read())
     }
+
+    @Test
+    fun `the days ahead survive the trip through the file`() = runTest {
+        val file = folder.newFile("weather.json")
+        val forecast = weather().copy(days = threeDays())
+
+        store(file).write(StoredReading(forecast, Instant.parse("2026-09-01T12:01:00Z")))
+
+        // The whole reading, not only the strip: a store that dropped the days
+        // and a store that kept them would both pass an assertion on the place.
+        assertEquals(forecast, store(file).read()?.weather)
+    }
+
+    @Test
+    fun `a reading written before there was a strip reads back without one`() = runTest {
+        // Exactly what this store wrote until today. Losing it would cost a
+        // launch's worth of card for no reason anybody could act on.
+        val file = folder.newFile("weather.json")
+        file.writeText(
+            """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
+               "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
+               "fetched_at":"2026-09-01T12:15:00Z"}"""
+                .trimIndent(),
+        )
+
+        assertEquals(weather(), store(file).read()?.weather)
+    }
+
+    @Test
+    fun `a stored day whose date is not one reads as nothing rather than as a throw`() = runTest {
+        val file = folder.newFile("weather.json")
+        file.writeText(
+            """{"place":"Taipei","temperature":26,"high":32,"low":25,"sky":"CLOUDY",
+               "measured_at":"2026-09-01T02:30:00Z","steps_every_seconds":900,
+               "fetched_at":"2026-09-01T12:15:00Z",
+               "days":[{"date":"the day after next","high":32,"low":25,"sky":"CLOUDY"}]}"""
+                .trimIndent(),
+        )
+
+        assertNull(store(file).read())
+    }
+
+    private fun threeDays() = listOf(
+        ForecastDay(LocalDate.parse("2026-09-01"), high = 32, low = 25, sky = Sky.CLOUDY),
+        ForecastDay(LocalDate.parse("2026-09-02"), high = 29, low = 24, sky = Sky.RAIN),
+        ForecastDay(LocalDate.parse("2026-09-03"), high = 33, low = 26, sky = Sky.CLEAR),
+    )
 
     private fun weather() = Weather(
         place = "Taipei",
