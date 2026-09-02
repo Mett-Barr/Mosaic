@@ -31,6 +31,7 @@ sqlite = "2.7.0"
 robolectric = "4.16.1"
 paging = "3.5.1"
 composeLintChecks = "1.4.2"
+kover = "0.9.9"
 
 [libraries]
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
@@ -101,3 +102,4 @@ hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 module-graph = { id = "dev.iurysouza.modulegraph", version.ref = "moduleGraph" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
