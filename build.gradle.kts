@@ -126,6 +126,12 @@ subprojects {
 
 moduleGraphConfig {
     readmePath.set("${rootDir}/README.md")
+    // Kover aggregates coverage by declaring the root project a consumer of every
+    // module, which puts a root node on this diagram with eight edges out of it.
+    // That is build wiring, not architecture -- nobody reading the graph wants to
+    // know where coverage is collected -- so the configuration it travels on is
+    // left out rather than the picture being allowed to say something untrue.
+    excludedConfigurationsRegex.set("kover")
     heading.set("### 模組相依圖")
     orientation.set(Orientation.TOP_TO_BOTTOM)
     linkText.set(LinkText.NONE)
