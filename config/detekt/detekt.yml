@@ -25,6 +25,10 @@ complexity:
   TooManyFunctions:
     # Calculator 是封裝運算狀態機的單一類別；25 仍會阻擋無界成長。
     thresholdInClasses: 25
+    # 預覽是給 IDE 畫的樣板，不是這個檔案的介面：一個畫面把每個狀態各預覽一次，
+    # 就足以吃光檔案門檻，但沒有任何一個是別處呼叫得到的東西。檔案門檻仍以
+    # 真正的 composable 計算。
+    ignoreAnnotatedFunctions: ['Preview', 'PreviewLightDark', 'PreviewFontScale']
 
 naming:
   # Compose 規範以 PascalCase 命名可呼叫的 UI；一般 Kotlin 函式仍套用預設 lowerCamelCase。
@@ -56,10 +60,12 @@ style:
     active: true
   UnusedPrivateClass:
     active: true
-  # @Preview 的呼叫端在 IDE，靜態分析看不到；只排除這個明確註解。
+  # @Preview 的呼叫端在 IDE，靜態分析看不到；只排除這幾個明確列出的註解。
+  # multipreview 註解（PreviewLightDark、PreviewFontScale）自己標了 @Preview，
+  # 但 detekt 比對的是註解名稱而非展開後的結果，所以每一個都得自己列一次。
   UnusedPrivateMember:
     active: true
-    ignoreAnnotated: ['Preview']
+    ignoreAnnotated: ['Preview', 'PreviewLightDark', 'PreviewFontScale']
   UnusedPrivateProperty:
     active: true
-    ignoreAnnotated: ['Preview']
+    ignoreAnnotated: ['Preview', 'PreviewLightDark', 'PreviewFontScale']

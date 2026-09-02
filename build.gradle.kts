@@ -34,11 +34,17 @@ val allowedProjectDependencies = mapOf(
     ":feature:feed" to setOf(":core:domain", ":core:ui"),
     ":feature:detail" to setOf(":core:domain", ":core:ui"),
     ":feature:saved" to setOf(":core:domain"),
-    // :app is the composition root: it is the one module allowed to see everyone.
-    ":app" to setOf(
-        ":core:domain", ":core:data", ":core:ui",
-        ":feature:feed", ":feature:detail", ":feature:saved",
+    // The one module that knows which screen leads to which, and therefore the
+    // only one allowed to see every feature at once.
+    ":navigation" to setOf(
+        ":core:domain", ":feature:feed", ":feature:detail", ":feature:saved",
     ),
+    // :app is the composition root and nothing else. It must not declare an edge
+    // to a feature -- the moment it has one, a screen decision can be made there
+    // again. What this cannot say is that :app never sees a feature type:
+    // :navigation exposes them with api, and this reads declared edges rather
+    // than the classpath (DECISIONS.md 31).
+    ":app" to setOf(":core:domain", ":core:data", ":core:ui", ":navigation"),
 )
 
 // Coverage is aggregated here because a per-module number answers the wrong

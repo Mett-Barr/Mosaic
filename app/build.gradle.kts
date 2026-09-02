@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
     alias(libs.plugins.detekt)
@@ -81,12 +80,15 @@ dependencies {
     lintChecks(libs.compose.lint.checks)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
+    // No feature here: every screen decision lives in :navigation, and the
+    // architecture check in the root build file is what keeps it that way.
+    // :core:data is on the list because the Hilt modules are declared there, and
+    // :core:domain because the component generated here names the types they
+    // bind.
     implementation(project(":core:data"))
     implementation(project(":core:domain"))
     implementation(project(":core:ui"))
-    implementation(project(":feature:feed"))
-    implementation(project(":feature:detail"))
-    implementation(project(":feature:saved"))
+    implementation(project(":navigation"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -97,20 +99,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.runtime)
     implementation(libs.androidx.compose.animation)
     implementation(libs.androidx.compose.foundation)
 
-    // Navigation 3. Back stack restoration goes through kotlinx.serialization,
-    // so every NavKey has to be @Serializable.
-    implementation(libs.androidx.navigation3.runtime)
-    implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
-
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)
