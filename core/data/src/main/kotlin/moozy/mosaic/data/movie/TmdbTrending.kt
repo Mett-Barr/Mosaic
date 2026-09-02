@@ -89,7 +89,16 @@ internal class TmdbTrending(
      * minute, so writing this down would only ever be read back after it had
      * expired. `DECISIONS.md` 41 draws the same line for the articles the feed
      * showed: a cold start is worth a fresh request.
+     *
+     * `@Volatile` because the boundary it exists to survive is also a thread
+     * boundary: the flow is torn down and restarted on `Dispatchers.Default`,
+     * so the write and the read that follows it need not land on the same
+     * thread. The dispatch between them already establishes happens-before, so
+     * this is not a live bug being fixed -- it is the one field whose whole
+     * purpose is to be read by a coroutine other than the one that wrote it,
+     * and saying so costs nothing.
      */
+    @Volatile
     private var refusedAt: Instant? = null
 
     override val trending: StateFlow<List<Movie>> =
@@ -129,16 +138,33 @@ internal class TmdbTrending(
     /**
      * How much of the minute a refusal bought has not been served yet.
      *
-     * Clamped at both ends rather than trusted, because it is arithmetic on a
-     * clock the device owns. A clock that jumps forward lets the wait end early
-     * and costs one request, which is the cheap direction; a clock that jumps
-     * backwards would otherwise turn one refusal into a silence with no end to
-     * it, which is not.
+     * This is a stopwatch question put to a calendar, and there is exactly one
+     * thing a calendar cannot do with it: a wall clock is allowed to move
+     * backwards. A device that had been running fast moves backwards by however
+     * far it was wrong the moment it first reaches a time server. `served` is
+     * then negative and the subtraction hands back **more** than the minute it
+     * started from, so a three-day correction would be three days of a strip
+     * that is never asked for again -- on a `@Singleton` no teardown clears,
+     * with nothing on screen that would ever say so.
+     *
+     * A negative reading is therefore read for what it is: not a wait that has
+     * hardly begun, but a wait whose beginning is no longer anywhere the clock
+     * can reach. The refusal is let go and the next attempt is made now. That
+     * costs one request -- the same price a clock that jumps *forward* already
+     * pays here, and the price this app puts on losing a day everywhere else
+     * (`DECISIONS.md` 40, 41, 51).
+     *
+     * Past that guard the reading cannot exceed the minute, so the floor is the
+     * only end left worth clamping.
      */
     private fun whatIsLeftOfTheWait(): Long {
         val refused = refusedAt ?: return 0
         val served = Duration.between(refused, clock.now()).toMillis()
-        return (AFTER_A_FAILURE_MILLIS - served).coerceIn(0, AFTER_A_FAILURE_MILLIS)
+        if (served < 0) {
+            refusedAt = null
+            return 0
+        }
+        return (AFTER_A_FAILURE_MILLIS - served).coerceAtLeast(0)
     }
 
     /**
