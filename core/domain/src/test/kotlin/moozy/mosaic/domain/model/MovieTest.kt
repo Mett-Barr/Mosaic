@@ -57,6 +57,20 @@ class MovieTest {
     }
 
     @Test
+    fun `a stored day may lead the reader by two, and the third is not a date line`() {
+        // The two tests above leave the bound anywhere between two days and
+        // twelve -- one requires that two still holds, the other that thirteen
+        // does not, and every value in between passes both. But the reason the
+        // bound exists is arithmetic on the edge: a date line is worth one day
+        // and a device already out by one is worth the second, and past that
+        // the explanation stops being geography. So it is the edge that has to
+        // be pinned, not a number comfortably clear of it.
+        val trending = trending(LocalDate.parse("2026-09-02"))
+
+        assertFalse(trending.stillCurrentOn(LocalDate.parse("2026-08-30")))
+    }
+
+    @Test
     fun `a film with no title is not a film`() {
         assertThrows(IllegalArgumentException::class.java) { movie(title = "   ") }
     }
