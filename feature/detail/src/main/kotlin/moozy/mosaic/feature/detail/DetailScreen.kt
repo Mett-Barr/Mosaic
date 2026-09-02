@@ -59,9 +59,8 @@ import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
+import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.MosaicTheme
-import moozy.mosaic.core.ui.CardShape
-import moozy.mosaic.core.ui.PictureShape
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -121,7 +120,7 @@ fun DetailScreen(
     // one of its three states: a reader who opens an article over a slow
     // connection watches the card become a spinner and then an article, which is
     // one movement, not two.
-    val container = modifier.sharedArticleCard(id, CardShape)
+    val container = modifier.sharedArticleCard(id, ArticleEnd.FILLING_THE_DISPLAY)
     // Two of the three states have nothing at all under the status bar, and the
     // third only has a photograph when the article came with one -- `imageUrl` is
     // nullable, and plenty of them arrive without it.
@@ -305,12 +304,14 @@ private fun Article(
                 model = picture,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // The shared element before the clip, so the corners are rounded
-                // on the picture rather than on the rectangle carrying it here.
+                // This end of the flight fills the display, so the picture ends
+                // it with no corners at all: it is flush to the top and to both
+                // sides, and there is nothing left behind a rounded corner for
+                // it to be rounded against.
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
-                    .sharedArticleImage(id, PictureShape),
+                    .sharedArticleImage(id, ArticleEnd.FILLING_THE_DISPLAY),
             )
         } else {
             // No picture, and the arrow floating above is there all the same. This

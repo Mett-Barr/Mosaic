@@ -1171,3 +1171,65 @@ contentPadding 而不是 padding 它的父層：padding 父層會讓圖片被切
   `enableEdgeToEdge()`，官方文件明講在它之下不要自己設 `isAppearanceLightStatusBars`。
   scrim 存在的理由正是這個：圖示顏色跟著主題走，照片不跟著主題走，中間那段差距只能靠
   scrim 補。
+
+---
+
+## 35. 貼到螢幕邊的那一端不留圓角，圓角在飛行途中自己收掉
+
+> **這一則取代第 34 則裡「shared element 兩端必須同形」那個結論，但不改寫它。**
+> 34 則把「圖片在文章這端改成方角」列在「當時還考慮、沒做」，理由是
+> 「shared element 兩端必須同形（Compose 沒有形狀動畫）」。那句話**太強**了：
+> Compose 文件寫的是**沒有自動的**形狀動畫（*"there is no automatic animation between
+> shapes"*），不是不能做。34 則原文保留，history 是交付物。
+> 附帶更正一個引用：那句括號說「第 33 則也寫了」——第 33 則沒有寫過這件事，
+> 這個說法只存在於 `:core:ui` 的 KDoc 裡。
+
+**選了** —— `sharedArticleCard` / `sharedArticleImage` 不再收一個 `Shape`，改收一個
+`ArticleEnd`：`IN_A_LIST` 或 `FILLING_THE_DISPLAY`。兩個半徑（卡片 20dp、圖片 14dp，
+以及貼邊的 0dp）留在 `:core:ui` 一個地方，呼叫端只說**自己是哪一端**。
+文章那一端因此是方角——**貼著顯示器邊緣的東西不該有圓角**，圓角是要從某個背景上切出來的，
+而那裡沒有背景了；feed 與 Saved 的卡片一格都沒動。
+
+**圓角是轉場的函式，不是常數** —— `OverlayClip` 是一個**介面**，它的 `getClipPath` 每一幀
+都拿到當下的動畫 bounds（`SharedContentNode` 的 `draw()` 裡呼叫）。所以半徑可以是
+「轉場走到哪裡」的函式。這裡用 `AnimatedVisibilityScope.transition` 上的 `animateDp`：
+`Visible` 是自己這一端的半徑，`PreEnter` 與 `PostExit` 是**另一端**的。overlay 之外的那層
+clip 讀同一個 `State<Dp>`——文件說 overlay 裡的裁切要另外宣告，但沒說那兩份可以不一致，
+一個動一個不動就是在打架。
+
+**兩端都要動，不是只有文章那一端** —— `sharedElement` 只畫**正在進場**的那一端。
+去程進場的是文章，回程進場的是卡片。如果卡片那端固定 14dp，回程的第一幀就是一張
+「整個螢幕寬、貼在最上緣、四角 14dp」的圖——正好是這次要修的那個缺陷反過來。
+兩端都用同一條規則（`Visible` = 自己、其餘 = 對面），而它們是同一個 `AnimatedContent`
+transition 的兩個子節點，所以逐幀算出同一個數字，誰也不必知道對面是誰。
+
+**當時還考慮**
+
+- **從 bounds 的寬度推半徑**（`OverlayClip` 也允許，而且完全不需要狀態）。**沒有選。**
+  寬度在這個 app 裡分不開兩端：頭條卡片的圖片本來就是「螢幕寬減掉列表的 16dp padding」，
+  所以照寬度推，要嘛讓半徑在最後那幾 dp 內從滿收到零（一個穿著動畫外衣的硬切），
+  要嘛讓頭條那張圖靜止時就幾乎是方角——而 feed 不准動。轉場的進度是真的從一端跑到另一端的
+  那個量，寬度只是「差不多」。
+- **只改文章那一端，卡片維持常數。** 見上：回程會壞。
+- **維持 34 則的結論，改容器的形狀就好。** 不夠。容器（`sharedArticleCard`）的 `clip` 是圖片的
+  祖先，20dp 的容器會把圖片的上緣兩角一起磨掉——所以就算圖片改成 0dp，不動容器也看不出來。
+  兩個都改，而且用同一條規則。
+- **`CardShape` 與 `PictureShape` 兩個常數留著。** `PictureShape` 拿掉了：它存在的理由是
+  「逼兩端交出同一個形狀」，而那個理由沒有了，改成一個 `:core:ui` 內部的 `Dp`。
+  `CardShape` 留著，但理由換了一個——feed 的 `Surface` 需要一個靜止時的形狀，
+  而它必須跟 `IN_A_LIST` 那一端裁切出來的形狀一致。
+
+**取捨與限制**
+
+- **一樣沒有任何機器驗證。** `build detekt lint` 全綠只證明它會編譯（第 20、32、33、34 則
+  講的是同一件事）。這個專案沒有截圖測試：圓角收掉的速度跟矩形長大的速度合不合、
+  箭頭淡入的長度對不對、回程有沒有真的不再閃一下圓角，全部只能在裝置上看。
+- **兩條動畫用的是兩個 spring，不是同一條曲線。** 邊界用 `SharedTransitionDefaults` 的
+  `BoundsTransform`，半徑用 `animateDp` 的預設 spring。它們同時開始、都不會過衝到看得出來，
+  但沒有人保證它們同一幀結束。真要對齊，得把 `transitionSpec` 也接出來——在裝置上看得出
+  差別之前，那是一個沒有依據的參數。
+- **feed 的 `Surface` 仍然自己畫 20dp。** 去程時那張卡片是退場的一端，它的背景色由 `Surface`
+  自己畫，所以它的圓角在飛行途中不跟著收——它正在淡出，而且 `sharedElement` 的圖片本來就
+  只畫進場那端。要讓它也跟著收，`Surface` 的 `shape` 也得變成動畫值，那會把 feed 拉進這次
+  改動裡，而 feed 不准動。
+

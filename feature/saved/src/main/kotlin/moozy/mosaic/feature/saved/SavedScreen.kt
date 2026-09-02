@@ -32,7 +32,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.collections.immutable.persistentListOf
 import moozy.mosaic.core.ui.MosaicTheme
-import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
@@ -173,7 +173,7 @@ private fun SavedCard(
         // cards and as the article screen: both ends of a shared rectangle have to
         // agree about which modifiers decide the bounds and which measure what is
         // inside them.
-        modifier = modifier.sharedArticleCard(article.id, CardShape).fillMaxWidth(),
+        modifier = modifier.sharedArticleCard(article.id, ArticleEnd.IN_A_LIST).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {

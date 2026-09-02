@@ -1,19 +1,28 @@
 package moozy.mosaic.core.ui
 
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
+import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import moozy.mosaic.domain.model.ArticleId
 
@@ -38,19 +47,36 @@ fun ProvideArticleMotion(
 }
 
 /**
- * The corners a card keeps while it is becoming an article.
+ * Which of the two ends of the flight a caller is drawing.
  *
- * Here rather than in each screen because they are not a style choice one screen
- * gets to make: Compose has no shape animation (the documentation lists it under
- * current limitations), so a card asking for one radius and an article asking for
- * another do not meet in the middle -- the corners jump at one end of the flight.
- * Two ends agreeing is the whole requirement, and the cheapest way to make them
- * agree is to give them one place to read the answer from.
+ * The corners belong to the end and not to the element. A card sits inside a list
+ * that has margins of its own, so it is rounded; the article fills the display, and
+ * something touching the edge of the display should not be rounded -- there is no
+ * background left for the corner to be cut out of. So neither end asks for a shape.
+ * Each says where it is, and both radii live below, in one place, because the two
+ * ends still have to agree about what the *other* one looks like.
  */
-val CardShape: Shape = RoundedCornerShape(20.dp)
+enum class ArticleEnd { IN_A_LIST, FILLING_THE_DISPLAY }
 
-/** The same agreement, for the photograph inside the card. */
-val PictureShape: Shape = RoundedCornerShape(14.dp)
+/** The corners a card keeps in either list. */
+private val CardCorner = 20.dp
+
+/** The corners of the photograph inside one. */
+private val PictureCorner = 14.dp
+
+/** No corners at all, for the end that has the display's own edge for a border. */
+private val FlushCorner = 0.dp
+
+/**
+ * The corners a card is drawn with, for the surface painting them behind itself.
+ *
+ * Here rather than in the feed because it is one half of an agreement: the shape a
+ * card's [androidx.compose.material3.Surface] paints has to be the shape
+ * [sharedArticleCard] clips to while that card is standing still, or the background
+ * and the contents inside it would round by different amounts. The travelling half
+ * of the agreement is [ArticleEnd]'s.
+ */
+val CardShape: Shape = RoundedCornerShape(CardCorner)
 
 /**
  * The card the reader tapped, becoming the article they tapped it for.
@@ -75,9 +101,12 @@ val PictureShape: Shape = RoundedCornerShape(14.dp)
  * after are two different measurements of one rectangle.
  */
 @Composable
-fun Modifier.sharedArticleCard(id: ArticleId, shape: Shape): Modifier {
-    val motion = LocalArticleMotion.current ?: return this.clip(shape)
+fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
+    val motion = LocalArticleMotion.current
+        ?: return this.clip(RoundedCornerShape(at.corner(CardCorner)))
+    val radius = motion.corner(at, CardCorner)
     return with(motion.scope) {
+        val overlay = remember(radius) { OverlayClip(TravellingCorner(radius)) }
         this@sharedArticleCard
             .sharedBounds(
                 sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.CARD)),
@@ -85,9 +114,9 @@ fun Modifier.sharedArticleCard(id: ArticleId, shape: Shape): Modifier {
                 enter = fadeIn(),
                 exit = fadeOut(),
                 resizeMode = ResizeMode.scaleToBounds(),
-                clipInOverlayDuringTransition = OverlayClip(shape),
+                clipInOverlayDuringTransition = overlay,
             )
-            .clip(shape)
+            .roundedBy(radius)
     }
 }
 
@@ -97,30 +126,29 @@ fun Modifier.sharedArticleCard(id: ArticleId, shape: Shape): Modifier {
  * An element and not bounds: it is the same photograph at both ends, so there is
  * nothing to cross-fade between -- only a rectangle to travel and a crop to grow.
  *
- * [shape] is not decoration. While the transition runs the picture is lifted into
- * an overlay layer, which the Compose documentation is explicit about: it *"will
- * escape the parent's bounds and its layer transformations"*. A card that rounds
- * its picture by clipping the card is therefore rounding nothing once the picture
- * leaves -- the corners go square for exactly the length of the animation. So the
- * shape is declared twice: [OverlayClip] for the seconds it spends in the overlay,
- * and `clip` for every other frame.
- *
- * **Both ends must pass the same shape.** There is no shape animation in Compose
- * (the documentation lists it under current limitations), so a card asking for
- * `medium` and an article asking for `large` do not meet in the middle -- the
- * corners jump at one end of the flight.
+ * The corners are not decoration. While the transition runs the picture is lifted
+ * into an overlay layer, which the Compose documentation is explicit about: it
+ * *"will escape the parent's bounds and its layer transformations"*. A card that
+ * rounds its picture by clipping the card is therefore rounding nothing once the
+ * picture leaves -- the corners go square for exactly the length of the animation.
+ * So the radius is declared twice: [OverlayClip] for the seconds it spends in the
+ * overlay, and a clipping layer for every other frame. Both read the same [Dp], so
+ * the frame the picture leaves the overlay on is the frame it was already drawing.
  */
 @Composable
-fun Modifier.sharedArticleImage(id: ArticleId, shape: Shape): Modifier {
-    val motion = LocalArticleMotion.current ?: return this.clip(shape)
+fun Modifier.sharedArticleImage(id: ArticleId, at: ArticleEnd): Modifier {
+    val motion = LocalArticleMotion.current
+        ?: return this.clip(RoundedCornerShape(at.corner(PictureCorner)))
+    val radius = motion.corner(at, PictureCorner)
     return with(motion.scope) {
+        val overlay = remember(radius) { OverlayClip(TravellingCorner(radius)) }
         this@sharedArticleImage
             .sharedElement(
                 sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
                 animatedVisibilityScope = motion.visibility,
-                clipInOverlayDuringTransition = OverlayClip(shape),
+                clipInOverlayDuringTransition = overlay,
             )
-            .clip(shape)
+            .roundedBy(radius)
     }
 }
 
@@ -146,6 +174,76 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
 }
 
 /**
+ * The radius this end is drawing right now, somewhere between the two ends.
+ *
+ * **There is no *automatic* shape animation in Compose, which is not the same as
+ * there being none.** [OverlayClip] is an interface handed the *current* animated
+ * bounds on every frame, so what it clips to is free to be a function of where the
+ * transition has got to. This one drives that function off the transition itself:
+ * [AnimatedVisibilityScope.transition] runs `PreEnter -> Visible` on the end that is
+ * arriving and `Visible -> PostExit` on the end that is leaving, so `Visible` means
+ * *this* end and either of the others means *the other* end. Both ends are children
+ * of one `AnimatedContent` transition and both compute the same number from it, so
+ * they agree frame for frame without either one knowing what the other is.
+ *
+ * **The alternative was to derive the radius from the bounds' width**, which the
+ * [OverlayClip] interface also allows and which would need no state at all. It was
+ * not taken because width does not separate the two ends here: the lead story's
+ * picture is already the display width less the list's 16dp of padding, so a radius
+ * read off the width would have to fall from full to nothing inside those last few
+ * dp -- a jump wearing an animation's clothes -- or round the lead card's picture
+ * almost square while it is sitting still. The transition's progress is the thing
+ * that actually runs from one end to the other; the width only nearly does.
+ */
+@Composable
+private fun ArticleMotion.corner(at: ArticleEnd, inAList: Dp): State<Dp> =
+    visibility.transition.animateDp(label = "article corner") { state ->
+        val drawing = if (state == EnterExitState.Visible) at else at.other
+        drawing.corner(inAList)
+    }
+
+/** [inAList] at one end, and the display's own edge at the other. */
+private fun ArticleEnd.corner(inAList: Dp): Dp =
+    if (this == ArticleEnd.IN_A_LIST) inAList else FlushCorner
+
+private val ArticleEnd.other: ArticleEnd
+    get() = if (this == ArticleEnd.IN_A_LIST) {
+        ArticleEnd.FILLING_THE_DISPLAY
+    } else {
+        ArticleEnd.IN_A_LIST
+    }
+
+/**
+ * The same corner as the overlay's, for the frames the element is not in the overlay.
+ *
+ * A layer block rather than [Modifier.clip], because `clip` takes the shape once at
+ * composition and would keep clipping to the radius the first frame happened to
+ * have. Read inside the block, the radius reaches the layer on every frame it
+ * changes without recomposing anything.
+ */
+private fun Modifier.roundedBy(radius: State<Dp>): Modifier = graphicsLayer {
+    clip = true
+    shape = RoundedCornerShape(radius.value)
+}
+
+/**
+ * A rounded corner asked for at draw time instead of at composition time.
+ *
+ * `OverlayClip(shape)` calls [Shape.createOutline] from the overlay's draw, once per
+ * frame with the bounds the element currently has. Reading the animated radius in
+ * there rather than closing over a number is what makes one [OverlayClip] instance
+ * enough for the whole flight.
+ */
+private class TravellingCorner(private val radius: State<Dp>) : Shape {
+
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline = RoundedCornerShape(radius.value).createOutline(size, layoutDirection, density)
+}
+
+/**
  * The scopes a shared element needs, from whoever is animating between screens.
  *
  * They travel down the composition rather than through Gradle, which is what lets
@@ -162,9 +260,10 @@ private class ArticleMotion(
 /**
  * Null unless someone provided it, and null is not a failure.
  *
- * A `@Preview` and a test have no transition to take part in, so the three
- * modifiers above add nothing at all rather than throwing. A screen that could
- * only be drawn while it was moving would be a screen nobody could look at.
+ * A `@Preview` and a test have no transition to take part in, so the modifiers
+ * above add nothing but the corners the end they were given asks for, rather than
+ * throwing. A screen that could only be drawn while it was moving would be a
+ * screen nobody could look at.
  */
 private val LocalArticleMotion = compositionLocalOf<ArticleMotion?> { null }
 
