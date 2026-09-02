@@ -18,6 +18,7 @@ import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.domain.repository.ArticleRepository
 import moozy.mosaic.domain.repository.SavedArticles
@@ -312,6 +313,29 @@ class DetailViewModelTest {
         }
     }
 
+    /**
+     * "Which article is this" and "is it kept right now" are two questions with two
+     * answers, and only the first one is the article. Waiting for the second holds a
+     * loading state in front of an article that is already in hand -- and while that
+     * state is on screen, the card the reader tapped has nothing to become.
+     *
+     * The reading list is still asked, and its answer still lands: that is what the
+     * collector in `init` is for, and `an article the reader kept says so` is where
+     * it is asserted. What this one says is that the article does not queue behind it.
+     */
+    @Test
+    fun `an article in hand is not held back until the reading list answers`() = runTest {
+        val detail = DetailViewModel(FakeArticle(ArticleResult.Loaded(article())), SilentSaved())
+
+        detail.state.test {
+            detail.open(ArticleId("39742"))
+            assertEquals(DetailUiState.Loading, awaitItem())
+
+            val shown = awaitItem()
+            assertTrue("expected the article, got $shown", shown is DetailUiState.Content)
+        }
+    }
+
     private fun detailOf(result: ArticleResult) = DetailViewModel(FakeArticle(result), FakeSaved())
 
     private fun article(id: String = "39742", title: String = "Roman Commissioning") = ArticleItem(
@@ -335,6 +359,19 @@ class DetailViewModelTest {
         override suspend fun forget(id: ArticleId) {
             articles.value = articles.value.filterNot { it.id == id }
         }
+    }
+
+    /**
+     * A reading list that has not answered yet. Room's own flow answers off a query
+     * thread, so "not yet" is the state every open really starts in; this one simply
+     * stays there for the length of the test.
+     */
+    private class SilentSaved : SavedArticles {
+        override val saved: Flow<List<ArticleItem>> = MutableSharedFlow()
+
+        override suspend fun save(article: ArticleItem) = Unit
+
+        override suspend fun forget(id: ArticleId) = Unit
     }
 
     private class FakeArticle(vararg results: ArticleResult) : ArticleRepository {
