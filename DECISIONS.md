@@ -2204,3 +2204,47 @@ delay(wait)
 **取捨與限制** —— **一樣沒有機器驗證，而且橫向三鍵這個組合沒有實機看過。**
 這一則靠的是 `navigationBarsPadding` 的定義（它套的是 `WindowInsets.navigationBars`
 的四邊，而不是只有 `bottom`），不是一張截圖。要證明它，得在橫向三鍵的裝置上截一張。
+
+---
+
+## 51. 換名字失敗第二次也要有交代，而且不留下半個檔案
+
+**症狀** —— `FileTrendingStore.write` 的註解說「rename 不會做到一半」，
+下面那段 fallback 卻是：
+
+```kotlin
+if (!writing.renameTo(file)) {
+    file.delete()
+    writing.renameTo(file)   // 回傳值丟掉
+}
+```
+
+第二次 rename 的結果沒有人看。它如果也失敗，讀者手上**兩天都沒有**——舊的被 `delete()` 了，
+新的還躺在 `trending-movies.json.writing`——而且那個 `.writing` 會一直留在 cacheDir 裡。
+
+**根因** —— 註解對「一次 rename」是對的，對「delete 之後再 rename」這一對就不對了。
+兩行之間磁碟上沒有任何一天，那正是原本要避免的狀態。fallback 本身有必要
+（有些檔案系統不接受 rename 到一個已存在的名字，Windows 是其中之一——
+`FileTrendingStoreTest` 用 `folder.newFile()` 建出一個空檔，所以本機測試跑的一直是這條路）。
+
+**選了** —— 保留 fallback，但把第二次的結果接起來：失敗就寫 `lastProblem`，
+並把 `.writing` 刪掉。註解也改成說實話——「上面那句對每一次 rename 仍然成立，
+不成立的是這一對」。
+
+**為什麼刪掉 `.writing` 而不是留著當殘骸** —— 沒有任何程式碼會去讀它，
+`read()` 只認 `file`。留著就是 cacheDir 裡一個永遠沒有人認領的陌生人；
+而且下一次成功的寫入本來就得先清掉它才 rename 得上去。
+
+**當時還考慮**
+
+- **先把舊的改名成 `.previous` 再 rename，失敗就搬回來。** 那是三次 rename 換一次，
+  而這裡丟掉的東西是「一次請求」（`TrendingStore` 的 KDoc 與第 40 則都這樣定價）。
+  為一次請求做兩階段交易不划算。
+- **用 `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`。** 那確實能一步做完，
+  也真的比較好；沒選是因為旁邊兩個存放器（天氣、閱讀清單）用的是同一套
+  `File.renameTo` 寫法，只改其中一個會讓三份程式碼講不同的話。要換就三個一起換，
+  那是另一則的事。
+
+**取捨與限制** —— **沒有測試釘住第二次也失敗那條路。** 要讓 `renameTo` 連續失敗兩次
+得去動檔案系統的權限，而這個專案沒有那種測試設施。既有的六條
+`FileTrendingStoreTest` 仍然覆蓋成功那條路（在 Windows 上跑的正是 fallback 的第一次重試）。

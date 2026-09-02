@@ -88,8 +88,22 @@ internal class FileTrendingStore(
                 val writing = File(file.parentFile, file.name + ".writing")
                 writing.writeText(json.encodeToString(StoredTrending.serializer(), trending.stored()))
                 if (!writing.renameTo(file)) {
+                    // Some filesystems refuse a rename onto a name that is
+                    // already taken, so the old day has to go first -- and that
+                    // is the one moment this is not atomic, because between
+                    // these two lines there is no day on disk at all. The
+                    // sentence above is still true of each rename; it is this
+                    // pair that is not.
                     file.delete()
-                    writing.renameTo(file)
+                    if (!writing.renameTo(file)) {
+                        // Neither day survived. Say so, and take the half of a
+                        // file with it: a `.writing` left in the cache
+                        // directory is a stranger nothing will ever read, and
+                        // the next successful write would have to clear it
+                        // before it could rename onto it anyway.
+                        lastProblem = "the day could not be put in place of the last one"
+                        writing.delete()
+                    }
                 }
             } catch (unwritable: IOException) {
                 lastProblem = "the day could not be written down: ${unwritable.message}"
