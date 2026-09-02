@@ -52,6 +52,9 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleImage
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
 
@@ -242,12 +245,19 @@ private fun ArticleList(
     }
 }
 
-/** The story at the top of the feed: picture first, then the words. */
+/**
+ * The story at the top of the feed: picture first, then the words.
+ *
+ * The card is what the article screen grows out of, and the picture and the title
+ * travel there rather than fading out here and back in there. What that costs this
+ * file is three modifiers; who is animating them, and whether anyone is, is not
+ * something this module is told.
+ */
 @Composable
 private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().sharedArticleCard(article.id),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -257,7 +267,10 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     model = url,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(LEAD_IMAGE_RATIO),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(LEAD_IMAGE_RATIO)
+                        .sharedArticleImage(article.id),
                 )
             }
             Column(
@@ -271,6 +284,7 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedArticleTitle(article.id),
                 )
                 if (article.summary.isNotBlank()) {
                     Text(
@@ -294,8 +308,11 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
 @Composable
 private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Row(
+        // The bounds first and the clip after it, so the rounded corners are drawn
+        // on the row rather than on the rectangle that is travelling.
         modifier = modifier
             .fillMaxWidth()
+            .sharedArticleCard(article.id)
             .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .padding(vertical = 4.dp),
@@ -306,7 +323,10 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(THUMBNAIL).clip(MaterialTheme.shapes.medium),
+                modifier = Modifier
+                    .size(THUMBNAIL)
+                    .sharedArticleImage(article.id)
+                    .clip(MaterialTheme.shapes.medium),
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -319,6 +339,7 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 // keeps the rhythm the design gets from every row being alike.
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.sharedArticleTitle(article.id),
             )
         }
     }

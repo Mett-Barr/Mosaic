@@ -41,6 +41,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleImage
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
 
@@ -61,6 +64,7 @@ fun DetailScreen(
     LaunchedEffect(id) { viewModel.open(id) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     DetailScreen(
+        id = id,
         state = state,
         onRetry = viewModel::retry,
         onBack = onBack,
@@ -70,8 +74,15 @@ fun DetailScreen(
     )
 }
 
+/**
+ * [id] is not shown. It is what the card the reader tapped is matched against, and
+ * it has to be here rather than on [ArticleView] because this screen has to claim
+ * those bounds before it knows what is in them -- the article is still being
+ * fetched when the transition starts.
+ */
 @Composable
 fun DetailScreen(
+    id: ArticleId,
     state: DetailUiState,
     onRetry: () -> Unit,
     onBack: () -> Unit,
@@ -79,14 +90,19 @@ fun DetailScreen(
     onLetGo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The bounds the tapped card grows into, on the screen rather than inside any
+    // one of its three states: a reader who opens an article over a slow
+    // connection watches the card become a spinner and then an article, which is
+    // one movement, not two.
+    val container = modifier.sharedArticleCard(id)
     // One branch per state, each naming what it draws: [DetailUiState] is sealed,
     // so a state added later without a picture to go with it will not build.
     when (state) {
-        DetailUiState.Loading -> LoadingState(modifier)
+        DetailUiState.Loading -> LoadingState(container)
 
-        is DetailUiState.Failed -> FailedState(state, onRetry, onBack, modifier)
+        is DetailUiState.Failed -> FailedState(state, onRetry, onBack, container)
 
-        is DetailUiState.Content -> Article(state, onBack, onKeep, onLetGo, modifier)
+        is DetailUiState.Content -> Article(id, state, onBack, onKeep, onLetGo, container)
     }
 }
 
@@ -153,6 +169,7 @@ private fun FailedState(
 
 @Composable
 private fun Article(
+    id: ArticleId,
     state: DetailUiState.Content,
     onBack: () -> Unit,
     onKeep: () -> Unit,
@@ -173,9 +190,12 @@ private fun Article(
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // The shared element before the clip, so the corners are rounded
+                // on the picture rather than on the rectangle carrying it here.
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
+                    .sharedArticleImage(id)
                     .clip(MaterialTheme.shapes.large),
             )
         }
@@ -188,6 +208,7 @@ private fun Article(
             article.title,
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.sharedArticleTitle(id),
         )
         if (article.summary.isNotBlank()) {
             Text(
@@ -236,6 +257,8 @@ private const val IMAGE_RATIO = 16f / 9f
  * to fetch from in a still render and this screen sets no placeholder, so a URL
  * would reserve a 16:9 hole and leave it empty.
  */
+private val PreviewArticleId = ArticleId("preview-observatory")
+
 private val PreviewArticle = ArticleView(
     title = "The observatory that keeps working because nobody funded its replacement",
     attribution = "Nature · Yesterday",
@@ -311,6 +334,7 @@ private fun ArticlePreview() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Article(
+                id = PreviewArticleId,
                 state = DetailUiState.Content(PreviewArticle),
                 onBack = {},
                 onKeep = {},
@@ -333,6 +357,7 @@ private fun ArticlePreviews() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Article(
+                id = PreviewArticleId,
                 state = DetailUiState.Content(PreviewArticle, saved = true),
                 onBack = {},
                 onKeep = {},
@@ -356,6 +381,7 @@ private fun ArticleFontScalePreviews() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Article(
+                id = PreviewArticleId,
                 state = DetailUiState.Content(PreviewArticle, saved = true),
                 onBack = {},
                 onKeep = {},

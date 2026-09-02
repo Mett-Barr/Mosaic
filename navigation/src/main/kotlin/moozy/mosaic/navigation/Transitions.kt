@@ -43,6 +43,24 @@ internal val LateralSwitch: Map<String, Any> = metadata {
 }
 
 /**
+ * The article is a child of the list it was opened from, so the card carries it.
+ *
+ * A fade, and nothing else. That is not the absence of a transition: the card's
+ * bounds are already growing into the article underneath this, and a screen that
+ * also slid would be two motions describing one journey, disagreeing about where
+ * the reader is looking. The push and the pop are the same fade because the card
+ * is what reverses, not the screen.
+ *
+ * On `ArticleKey` because that is the entry on top both when it arrives and when
+ * it leaves.
+ */
+internal val CardBecomesArticle: Map<String, Any> = metadata {
+    put(NavDisplay.TransitionKey) { fadeIn() togetherWith fadeOut() }
+    put(NavDisplay.PopTransitionKey) { fadeIn() togetherWith fadeOut() }
+    put(NavDisplay.PredictivePopTransitionKey) { _ -> fadeIn() togetherWith fadeOut() }
+}
+
+/**
  * One screen leaving the way the other arrives.
  *
  * The fade is there so that neither screen has a hard edge crossing the other

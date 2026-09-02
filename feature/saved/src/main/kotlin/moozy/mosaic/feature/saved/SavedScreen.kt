@@ -32,6 +32,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.collections.immutable.persistentListOf
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 
 /**
@@ -151,6 +153,11 @@ private fun OfflineNote(modifier: Modifier = Modifier) {
  * The filled bookmark is the remove control. It is not decoration next to a
  * button: on this screen every row is saved, so the only thing the mark can
  * usefully do when tapped is stop being true.
+ *
+ * The card grows into the article the same way the feed's does. Only two of the
+ * three parts are shared, because a [SavedRow] carries no picture -- this list
+ * shows enough to recognise something the reader already chose, and what it does
+ * not show, it does not carry.
  */
 @Composable
 private fun SavedCard(
@@ -161,7 +168,7 @@ private fun SavedCard(
 ) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().sharedArticleCard(article.id),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -183,6 +190,7 @@ private fun SavedCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedArticleTitle(article.id),
                 )
             }
             IconButton(onClick = onLetGo) {

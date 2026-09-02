@@ -980,3 +980,70 @@ runtime classpath），而三個畫面在 `implementation` 下也在模擬器上
 
 **代價** —— 多一個模組就是多一份建置設定與一個編譯單元；`:app` 的 project 相依從六條
 變成四條，數量上省得不多。省下的不是邊的數量，是**`:app` 能做的事的種類**。
+
+---
+
+## 32. 轉場的兩個 scope 走 `:core:ui` 的 CompositionLocal，feature 不認識 Navigation 3
+
+**選了** —— `:core:ui` 開一個預設為 `null` 的 CompositionLocal，裝著
+`SharedTransitionScope` 與 `AnimatedVisibilityScope`，外加三個用這個 app 的話命名的
+modifier：`sharedArticleCard`、`sharedArticleImage`、`sharedArticleTitle`。
+`:navigation` 把 `NavDisplay` 包進 `SharedTransitionLayout`，在每個 `NavEntry` 裡讀
+`LocalNavAnimatedContentScope`，把兩個 scope 填進去。三個 feature 只呼叫 modifier，
+`androidx.navigation3.*` 一行都沒有。
+
+**為什麼不讓 feature 直接相依 Navigation 3** —— 第 31 則剛把「哪個畫面通往哪個」
+收進 `:navigation`。`LocalNavAnimatedContentScope` 是 Navigation 3 的型別，feature 一旦
+import 它，就等於重新知道自己是被誰導覽的——那條邊界會在同一天失效。要注意的是
+**這一條沒有機器守著**：`checkModuleDependencies` 讀的是 project 相依，看不到函式庫相依，
+它靠的是 `:feature:*` 的 `build.gradle.kts` 裡根本沒有 navigation3 這個座標。
+
+這條路走得通，是因為 **`SharedTransitionScope` 與 `AnimatedVisibilityScope` 是 Compose 的
+型別，不是 Navigation 3 的型別**——Navigation 3 只是剛好持有它們。主題早就是這樣過去的
+（`MosaicTheme` 套一次，底下每個畫面讀 `MaterialTheme.colorScheme`，中間沒有 Gradle 的邊），
+轉場 scope 走同一條路。
+
+**降級要安全** —— 沒有人提供時 local 是 `null`，三個 modifier 原樣回傳 `this`。
+`@Preview` 與測試沒有轉場可以參加，而一個只有在動的時候才畫得出來的畫面，
+是沒有人看得到的畫面。
+
+**Reading 與 Saved 是兄弟，不是父子** —— 底部那條 bar 原本一邊是 push（`add(SavedKey)`）、
+一邊是 pop（`while (size > 1) removeAt(...)`），而 Navigation 3 對這兩件事的動畫不同，
+所以同一次切換的兩個方向長得像兩種手勢：一個往前推進，一個往回縮掉。**錯的是動畫，
+不是堆疊**——Reading 必須留在堆疊底部（讀者按 Reading 再按返回，不該掉進一個他沒選過的
+Saved），但「誰在誰下面」這件事對「切換長什麼樣」沒有發言權，因為這兩個目的地誰也不包含誰。
+所以 back stack 一行沒動，只有 `SavedKey` 多了三段 metadata，兩個方向是同一個橫向平移的鏡像。
+
+**key 用型別，而且帶著來源清單** —— 用 data class 不用字串（Compose 文件明說），因為
+兩個模組要湊出同一把 key，而 `"article-image-$id"` 是拼字上的默契，編譯器沒有意見。
+帶 id 是因為讀者可以在前一篇還沒退場時開下一篇。帶 `CardOrigin` 則是設計時才想通的：
+橫向切換的那半秒 Reading 與 Saved 同時在畫面上，而一篇從 feed 存起來的文章兩邊都有——
+共用一把 key 會讓那張卡片自己跟自己配對，在別人平移的時候斜著飛過去。
+`CardOrigin` 由 `ArticleKey(id, from)` 帶著，`:navigation` 填進 local，feature 看不到它。
+
+**當時還考慮**
+
+- **feature 直接 import `LocalNavAnimatedContentScope`。** 少一個 CompositionLocal、
+  少兩條模組邊。放棄的理由見上：那正是第 31 則拆掉的那條線。
+- **兩個 scope 當參數一路傳下去。** 不需要 CompositionLocal，但每個畫面、每個列表項的
+  簽章都要多兩個只跟動畫有關的參數，而中間經手的 composable 一個都用不到。
+- **只給 feed 做容器轉場，Saved 不做。** 那樣就不需要 `CardOrigin`。但兩個清單通往
+  同一個畫面，只有一邊會動比兩邊都不動更像壞掉。
+- **來源放在 back stack 以外的地方**（例如 `Mosaic()` 裡一個 `rememberSaveable`）。
+  能動，但那是一份跟 back stack 平行、必須手動保持同步的狀態，而 back stack 本來就是
+  「讀者從哪裡來」的唯一紀錄。
+- **標題也用 `sharedElement`。** 兩邊是同一串字，但卡片給它兩三行、文章給它全部，
+  `sharedElement` 會在飛行中重排文字。改用 `sharedBounds` 加 `scaleToBounds()`——
+  它量一次最終版面再縮放，這也是 Compose 文件對文字的建議。圖片兩邊是同一張照片，
+  所以維持 `sharedElement`。
+- **文章畫面也給一段滑動。** 卡片的邊界已經在長大，再加一段位移就是兩個動作在描述
+  同一段路程，而且對讀者的視線落點各說各話。所以文章的進出只有淡入淡出。
+
+**取捨** —— **多了一個 CompositionLocal，就是多了一個隱性相依。** Slack 的 compose-lint
+對這件事有話說（`ComposeCompositionLocalUsage`，warning，故意不消音），而它說得對：
+讀 `sharedArticleImage(id)` 的人看不出上面必須有人提供過東西。換到的是三個 feature
+不必認識導覽函式庫——這筆交易只有在那條邊界值得守的時候划算，而第 31 則已經花過力氣守它了。
+
+**綠燈沒有證明任何一個轉場是對的** —— 這批改動 `build detekt lint` 全綠，但這個專案
+沒有截圖測試、也沒有動畫的自動化驗證（第 20 則：畫面本來就沒有測試）。轉場唯一的
+驗收方式是在裝置上看，這一條要講清楚，不要讓讀者以為建置通過等於它動起來是對的。
