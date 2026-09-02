@@ -48,9 +48,9 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.serialization.Serializable
 import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.domain.model.ArticleId
-import moozy.mosaic.feature.detail.DetailRoute
-import moozy.mosaic.feature.feed.FeedRoute
-import moozy.mosaic.feature.saved.SavedRoute
+import moozy.mosaic.feature.detail.DetailScreen
+import moozy.mosaic.feature.feed.FeedScreen
+import moozy.mosaic.feature.saved.SavedScreen
 
 /**
  * The two places a reader can be. Navigation 3 restores a back stack by
@@ -107,7 +107,7 @@ private fun Mosaic() {
                         )
                     },
                 ) { padding ->
-                    FeedRoute(
+                    FeedScreen(
                         onOpenArticle = { id -> backStack.goTo(ArticleKey(id.value)) },
                         modifier = Modifier.padding(padding),
                     )
@@ -123,7 +123,7 @@ private fun Mosaic() {
                         )
                     },
                 ) { padding ->
-                    SavedRoute(
+                    SavedScreen(
                         onOpenArticle = { id -> backStack.goTo(ArticleKey(id.value)) },
                         modifier = Modifier.padding(padding),
                     )
@@ -134,7 +134,7 @@ private fun Mosaic() {
                 // places, it is something opened from one of them, and the way
                 // out of it is the way back in.
                 Screen(title = "", onBack = { backStack.removeLastOrNull() }) { padding ->
-                    DetailRoute(
+                    DetailScreen(
                         id = ArticleId(key.id),
                         onBack = { backStack.removeLastOrNull() },
                         modifier = Modifier.padding(padding),

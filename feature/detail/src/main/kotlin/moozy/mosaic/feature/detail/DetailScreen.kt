@@ -37,8 +37,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import moozy.mosaic.domain.model.ArticleId
 
+/**
+ * The article, holding on to a view model.
+ *
+ * The same name as the composable below rather than `DetailRoute`, because they
+ * are the same screen: which overload a caller reaches is decided by whether it
+ * already has the state, and that is the whole of the difference.
+ */
 @Composable
-fun DetailRoute(
+fun DetailScreen(
     id: ArticleId,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -65,48 +72,75 @@ fun DetailScreen(
     onLetGo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // One branch per state, each naming what it draws: [DetailUiState] is sealed,
+    // so a state added later without a picture to go with it will not build.
     when (state) {
-        DetailUiState.Loading -> Centred(modifier) { CircularProgressIndicator() }
+        DetailUiState.Loading -> LoadingState(modifier)
 
-        is DetailUiState.Failed -> Centred(modifier) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ) {
-                Column(
-                    Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(28.dp),
-                    )
-                    Text(
-                        state.message,
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        state.hint,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                    if (state.canRetry) {
-                        Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
-                            Text("Try again")
-                        }
-                    }
-                    TextButton(onClick = onBack) { Text("Back to the feed") }
-                }
-            }
-        }
+        is DetailUiState.Failed -> FailedState(state, onRetry, onBack, modifier)
 
         is DetailUiState.Content -> Article(state, onBack, onKeep, onLetGo, modifier)
+    }
+}
+
+/** The article has been asked for and has not arrived. */
+@Composable
+private fun LoadingState(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
+/**
+ * The article could not be shown, and what there is left to do about it.
+ *
+ * Whether to offer another go is [DetailUiState.Failed.canRetry]'s to say, not
+ * this composable's: the way back to the feed is underneath either way, and it
+ * is the only thing on offer when trying again cannot work.
+ */
+@Composable
+private fun FailedState(
+    state: DetailUiState.Failed,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Column(
+                Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(28.dp),
+                )
+                Text(
+                    state.message,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    state.hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                if (state.canRetry) {
+                    Button(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
+                        Text("Try again")
+                    }
+                }
+                TextButton(onClick = onBack) { Text("Back to the feed") }
+            }
+        }
     }
 }
 
@@ -184,11 +218,6 @@ private fun Article(
             Text("Back to the feed")
         }
     }
-}
-
-@Composable
-private fun Centred(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
 }
 
 private const val IMAGE_RATIO = 16f / 9f

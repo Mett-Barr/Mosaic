@@ -30,8 +30,15 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moozy.mosaic.domain.model.ArticleId
 
+/**
+ * The kept articles, holding on to a view model.
+ *
+ * The same name as the composable below rather than `SavedRoute`, for the reason
+ * the other two screens carry one name each: a second word for the same screen is
+ * something more to know and nothing more to understand.
+ */
 @Composable
-fun SavedRoute(
+fun SavedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SavedViewModel = hiltViewModel(),
@@ -52,38 +59,57 @@ fun SavedScreen(
     onLetGo: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Two branches because [SavedUiState] has two answers, and each one names
+    // what it draws rather than describing it in place.
     when (state) {
-        SavedUiState.Empty -> Box(
-            modifier.fillMaxSize().padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                "Nothing saved yet. Articles you save stay readable without a connection.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
+        SavedUiState.Empty -> EmptyState(modifier)
+
+        is SavedUiState.Content -> SavedList(state, onOpenArticle, onLetGo, modifier)
+    }
+}
+
+/** Nothing kept yet, and what keeping something is for. */
+@Composable
+private fun EmptyState(modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "Nothing saved yet. Articles you save stay readable without a connection.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** Everything the reader kept, newest first, as the view model ordered it. */
+@Composable
+private fun SavedList(
+    state: SavedUiState.Content,
+    onOpenArticle: (ArticleId) -> Unit,
+    onLetGo: (ArticleId) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Standing rather than conditional: this screen cannot tell whether
+        // there is a connection, and what it says is true either way. The
+        // design's "you're offline" wording is a claim about right now, and
+        // making it would mean [SavedUiState] carrying a connection it does
+        // not have -- so the banner says the part that is always true.
+        item(key = "offline-note") { OfflineNote() }
+
+        items(state.articles, key = { it.id.value }) { article ->
+            SavedCard(
+                article = article,
+                onOpen = { onOpenArticle(article.id) },
+                onLetGo = { onLetGo(article.id) },
             )
-        }
-
-        is SavedUiState.Content -> LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Standing rather than conditional: this screen cannot tell whether
-            // there is a connection, and what it says is true either way. The
-            // design's "you're offline" wording is a claim about right now, and
-            // making it would mean [SavedUiState] carrying a connection it does
-            // not have -- so the banner says the part that is always true.
-            item(key = "offline-note") { OfflineNote() }
-
-            items(state.articles, key = { it.id.value }) { article ->
-                SavedCard(
-                    article = article,
-                    onOpen = { onOpenArticle(article.id) },
-                    onLetGo = { onLetGo(article.id) },
-                )
-            }
         }
     }
 }

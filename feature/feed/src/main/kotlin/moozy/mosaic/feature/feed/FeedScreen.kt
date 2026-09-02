@@ -44,8 +44,15 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import moozy.mosaic.domain.model.ArticleId
 
+/**
+ * The feed, holding on to a view model.
+ *
+ * The same name as the composable below rather than `FeedRoute`, because they are
+ * the same screen: one of them knows where the state comes from and the other is
+ * handed it. A caller picks by what it has, not by learning a second word.
+ */
 @Composable
-fun FeedRoute(
+fun FeedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: FeedViewModel = hiltViewModel(),
@@ -89,40 +96,61 @@ fun FeedScreen(
         onRefresh = onRefresh,
         modifier = modifier,
     ) {
-        FeedContent(stories, weather, onOpenArticle)
+        // Which screen this is, worked out by a function with tests rather than by
+        // a `when` down here where nothing in this project could check it. Each
+        // branch names what it draws, so the phase and the picture read alike.
+        when (val phase = feedPhase(stories.loadState, stories.itemCount)) {
+            FeedPhase.Loading -> LoadingState()
+
+            FeedPhase.Empty -> EmptyState()
+
+            is FeedPhase.Failed -> FailedState(phase = phase, onRetry = stories::retry)
+
+            FeedPhase.Ready -> ArticleList(stories, weather, onOpenArticle)
+        }
     }
 }
 
+/** Nothing to show yet, and a reason to wait. */
 @Composable
-private fun FeedContent(
-    stories: LazyPagingItems<ArticleRow>,
-    weather: WeatherHeadline?,
-    onOpenArticle: (ArticleId) -> Unit,
+private fun LoadingState(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
+/** The feed answered and there was genuinely nothing in it. */
+@Composable
+private fun EmptyState(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Text(
+            "No articles yet.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Nothing to show, and a reason for it the reader can act on.
+ *
+ * The icon follows [FeedPhase.Failed.offline] rather than the words: reading the
+ * message back to decide which picture goes with it would be the same decision
+ * made a second time, in the one place nothing here can check it.
+ */
+@Composable
+private fun FailedState(
+    phase: FeedPhase.Failed,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Which screen this is, worked out by a function with tests rather than by a
-    // `when` down here where nothing in this project could check it.
-    when (val phase = feedPhase(stories.loadState, stories.itemCount)) {
-        FeedPhase.Loading -> Centred(modifier) { CircularProgressIndicator() }
-
-        FeedPhase.Empty -> Centred(modifier) {
-            Text(
-                "No articles yet.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        is FeedPhase.Failed -> Centred(modifier) {
-            Notice(
-                icon = if (phase.offline) Icons.Filled.CloudOff else Icons.Outlined.ErrorOutline,
-                message = phase.message,
-                hint = phase.hint,
-                onRetry = stories::retry,
-            )
-        }
-
-        FeedPhase.Ready -> ArticleList(stories, weather, onOpenArticle, modifier)
+    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Notice(
+            icon = if (phase.offline) Icons.Filled.CloudOff else Icons.Outlined.ErrorOutline,
+            message = phase.message,
+            hint = phase.hint,
+            onRetry = onRetry,
+        )
     }
 }
 
@@ -296,11 +324,6 @@ private fun Attribution(attribution: String, modifier: Modifier = Modifier) {
         overflow = TextOverflow.Ellipsis,
         modifier = modifier,
     )
-}
-
-@Composable
-private fun Centred(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
 }
 
 /**
