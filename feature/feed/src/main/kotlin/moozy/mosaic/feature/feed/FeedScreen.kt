@@ -453,6 +453,7 @@ private val PreviewWeather = WeatherHeadline(
     place = "Taipei",
     temperature = "28°",
     conditions = "Cloudy · 31° / 24°",
+    sky = Sky.CLOUDY,
     // The card's own previews live beside it; this one is here so the list
     // preview shows the weather cell at the height it actually has.
     days = persistentListOf(

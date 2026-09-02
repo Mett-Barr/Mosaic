@@ -1,6 +1,16 @@
 package moozy.mosaic.feature.feed
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AcUnit
+import androidx.compose.material.icons.outlined.BlurOn
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Grain
+import androidx.compose.material.icons.outlined.QuestionMark
+import androidx.compose.material.icons.outlined.Thunderstorm
+import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import moozy.mosaic.core.ui.readableTime
@@ -44,6 +54,13 @@ data class WeatherHeadline(
     val temperature: String,
     val conditions: String,
     /**
+     * The sky on its own, so the card can draw it.
+     *
+     * Kept beside [conditions] rather than instead of it: the words in that line
+     * are a sentence a reader reads, and this is what a picture is chosen by.
+     */
+    val sky: Sky,
+    /**
      * The days the card draws a strip from, today first.
      *
      * Empty when the reading carries no forecast, which is a card without a
@@ -79,6 +96,7 @@ internal fun Weather.headline() = WeatherHeadline(
     place = place,
     temperature = "$temperature°",
     conditions = "${sky.readable()} · $high° / $low°",
+    sky = sky,
     days = days.map { it.headline() }.toImmutableList(),
 )
 
@@ -103,7 +121,7 @@ internal fun FeedFailure.hint(): String = when (this) {
     is FeedFailure.Unexpected -> "Something unexpected happened."
 }
 
-private fun Sky.readable(): String = when (this) {
+internal fun Sky.readable(): String = when (this) {
     Sky.CLEAR -> "Clear"
     Sky.CLOUDY -> "Cloudy"
     Sky.FOG -> "Fog"
@@ -112,4 +130,33 @@ private fun Sky.readable(): String = when (this) {
     Sky.SNOW -> "Snow"
     Sky.THUNDERSTORM -> "Thunderstorms"
     Sky.UNKNOWN -> "Weather"
+}
+
+/**
+ * The same eight distinctions, as a picture.
+ *
+ * Beside [readable] and not in the domain, for the reason the words are here:
+ * `Sky.CLOUDY` is a fact about the weather, and that a cloud stands for it is a
+ * decision about this screen. The domain would have to know about a drawing
+ * library to hold the second one.
+ *
+ * All eight have one, [Sky.UNKNOWN] included. A column that drew nothing where
+ * its neighbours draw something reads as a card that failed rather than as a
+ * sky this app has no name for -- and a question mark says the second, which is
+ * the true one.
+ */
+internal fun Sky.icon(): ImageVector = when (this) {
+    Sky.CLEAR -> Icons.Outlined.WbSunny
+    Sky.CLOUDY -> Icons.Outlined.Cloud
+    // There is no fog in the icon set. Blur is the one that reads as air you
+    // cannot see through, which is the whole of what this has to say.
+    Sky.FOG -> Icons.Outlined.BlurOn
+    // Scattered specks beside one falling drop. Drizzle and rain are kept apart
+    // in the domain because one changes whether you take a coat, and these two
+    // pictures are the smallest pair that keeps saying so.
+    Sky.DRIZZLE -> Icons.Outlined.Grain
+    Sky.RAIN -> Icons.Outlined.WaterDrop
+    Sky.SNOW -> Icons.Outlined.AcUnit
+    Sky.THUNDERSTORM -> Icons.Outlined.Thunderstorm
+    Sky.UNKNOWN -> Icons.Outlined.QuestionMark
 }
