@@ -1658,3 +1658,68 @@ overlay 因此畫在 bar 之上，長大的文章會蓋過 bar，而不是滑到
   `NavDisplay` 的轉場用的是它自己的規格。看起來合不合，同樣只有裝置說了算。
 - **`Screen` 從此只有一個入口。** 第 34 則的 `EdgeToEdgeScreen` 在第 38 則已經刪掉，
   這一則之後 `Screen` 連 `bar` 參數都沒有了——它就是「頂欄 ＋ 內容」，沒有別的模式。
+
+---
+
+## 43. 圓角只有配對到的那一張卡片會動，其餘每一張站著不動
+
+**症狀** —— 把模擬器的 `animator_duration_scale` 調成 10 再點一張卡片，
+**清單裡每一張卡片都在把自己的圓角收平**，不是只有被點的那一張。
+截到的一幀裡，被點那張下面第三張已經接近方角，它旁邊那張還是圓的——
+那不是「只有一張在動」，那是同一條曲線上的兩個不同位置。
+
+**根因** —— `sharedArticleCard` 的半徑是從 `visibility.transition` 算出來的（第 35 則），
+而那個 transition 是 `AnimatedContent` 發給**整個 entry** 的，不是發給某一張卡片的。
+清單裡每一張卡片都呼叫 `sharedArticleCard`，於是每一張都跟著跑
+`Visible → PostExit`（回程 `PreEnter → Visible`），每一張都算出「20dp 收到 0dp」
+這條同樣的曲線，而且每一張都畫了出來。真的在飛的只有一張。
+
+第 37 則已經把這個閘的名字寫下來過：`sharedBounds` 自己的 enter／exit 是
+`isEnabled = { sharedContentState.isMatchFound }`，沒配對就整層關掉。
+**這個檔案裡唯一沒有接上那個閘的東西，就是圓角。**
+
+**選了** —— `roundedBy` 多收兩樣東西：這張卡片的 `SharedContentState`，
+以及「這一端靜止時的半徑」。畫的時候問 `isMatchFound`：配對到就讀動畫值，
+沒配對就用靜止值。沒有配對的卡片因此一幀都不動。
+
+**閘要在 draw 讀，不能在 composition 讀** —— 這是這一則唯一需要小心的地方。
+`isMatchFound` 在宣告這個元素的那一次 composition 裡是 false，要等**對面那一端**
+也 compose 完才會變 true；而清單裡的卡片是在 `LazyColumn` 的 measure 階段才 compose 的。
+這一段它自己的文件就寫了：*"[isMatchFound] is only set to true _after_ a new
+[sharedElement]/[sharedBounds] of the same [key] has been composed. If the new
+[sharedBounds]/[sharedElement] is declared in subcomposition (e.g. a LazyList) where
+the composition happens as a part of the measure/layout pass, that's when
+[isMatchFound] will become true."*
+
+Compose 自己的 `sharedBounds` 撞到的是同一件事，而它的解法是**根本不在 composition
+裡讀**：把旗標包成 lambda 往下傳（`isEnabled = { sharedContentState.isMatchFound }`），
+原始碼旁邊那段註解講得很直白——*"Since we don't know if a match is found when this is
+composed, we have to defer the decision to enable or disable content scaling until
+later in the frame."* `graphicsLayer` 的 block 正好就是「這一幀稍後」，
+所以這裡照抄它：閘在 layer block 裡讀。
+
+在 composition 裡讀會壞在**進場那一端**——它會先畫一幀「終點的半徑」，
+下一幀才跳回動畫的起點。那是一個發生在讀者正盯著看動作的瞬間的跳變。
+
+**當時還考慮**
+
+- **在 composition 裡 `if (isMatchFound) 動畫值 else 靜止值`。** 見上。
+- **讓 `animateDp` 的 `targetValueByState` 讀這個旗標**（沒配對就兩個狀態都回自己這端）。
+  更糟：transition 的初始值在它開始的那一刻就定住了，旗標後來變 true 也追不回來，
+  進場那一端會整段不動。
+- **沒配對就不呼叫 `animateDp`。** 那會讓 composition 的形狀跟著一個「飛行途中會改變」的
+  值走，等於在轉場中間增刪 transition 的動畫。現在的做法是**一律註冊，只在畫的時候決定
+  要不要讀它**——沒配對的卡片多一個永遠不會被看的動畫，換到的是 composition 穩定。
+- **只在 feed 那一端加條件，文章那端不管。** 兩端規則就不一樣了，而第 35 則整則的立論是
+  「兩端各自算，算出同一個數字」。閘也必須是兩端同一個。
+
+**取捨與限制**
+
+- **一樣沒有機器驗證。** 這個專案沒有截圖測試，這一則是在裝置上看出來的，也只能在
+  裝置上看回去。做法是 `animator_duration_scale=10` ＋ 逐幀 `screencap`，
+  量一張未被點的縮圖左上角被切掉多少個背景色像素：
+  修改前是 891 → 891 → 740（角在整平），修改後是 952 → 952 → 952（不動）。
+  那是一次手動觀察，不是一個會自己跑的檢查。
+- **`animateDp` 仍然為每一張卡片註冊。** 見上，這是刻意的。
+
+---

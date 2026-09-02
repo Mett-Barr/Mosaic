@@ -5,6 +5,7 @@ import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
+import androidx.compose.animation.SharedTransitionScope.SharedContentState
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -132,17 +133,18 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
         ?: return this.clip(RoundedCornerShape(at.corner(CardCorner)))
     val radius = motion.corner(at, CardCorner)
     return with(motion.scope) {
+        val card = rememberSharedContentState(motion.key(id, ArticlePart.CARD))
         val overlay = remember(radius) { OverlayClip(TravellingCorner(radius)) }
         this@sharedArticleCard
             .sharedBounds(
-                sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.CARD)),
+                sharedContentState = card,
                 animatedVisibilityScope = motion.visibility,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 resizeMode = ResizeMode.scaleToBounds(alignment = Alignment.TopCenter),
                 clipInOverlayDuringTransition = overlay,
             )
-            .roundedBy(radius)
+            .roundedBy(radius, standingStill = at.corner(CardCorner), whileMatched = card)
     }
 }
 
@@ -278,10 +280,35 @@ private val ArticleEnd.other: ArticleEnd
  * composition and would keep clipping to the radius the first frame happened to
  * have. Read inside the block, the radius reaches the layer on every frame it
  * changes without recomposing anything.
+ *
+ * **[whileMatched] is why twenty untouched cards do not square their corners off
+ * when one of them is tapped.** The transition driving [radius] belongs to the
+ * whole entry, not to the card that was tapped: every card in the list runs
+ * `Visible -> PostExit` on the way out and `PreEnter -> Visible` on the way back,
+ * so every card was computing the same travelling radius and drawing it. Only the
+ * card with a match is going anywhere, and only it should be moving; the rest sit
+ * at [standingStill], which is the radius the end they are at asks for.
+ *
+ * **The gate is read here and not in composition, and that is the whole trick.**
+ * `isMatchFound` is false during the composition that declares an element and only
+ * becomes true once the other end has been composed -- for a card in a `LazyColumn`
+ * that happens inside the measure pass, which the property's own documentation
+ * spells out. Compose's `sharedBounds` hits exactly this and answers it by never
+ * reading the flag in composition either: it passes `isEnabled =
+ * { sharedContentState.isMatchFound }` as a lambda, *"defer[ring] the decision to
+ * enable or disable content scaling until later in the frame"*. A layer block is
+ * already later in the frame. Choosing between the two radii up in composition
+ * would instead give the arriving end one frame at the radius it is going to
+ * finish at, before the animation it should have started from was allowed to
+ * exist -- which is a jump at the exact moment a reader is watching for movement.
  */
-private fun Modifier.roundedBy(radius: State<Dp>): Modifier = graphicsLayer {
+private fun Modifier.roundedBy(
+    radius: State<Dp>,
+    standingStill: Dp,
+    whileMatched: SharedContentState,
+): Modifier = graphicsLayer {
     clip = true
-    shape = RoundedCornerShape(radius.value)
+    shape = RoundedCornerShape(if (whileMatched.isMatchFound) radius.value else standingStill)
 }
 
 /**
