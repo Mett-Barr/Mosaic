@@ -2169,3 +2169,38 @@ delay(wait)
   一直往下捲的讀者會讓它一直長。這是第 41 則選的，這一則只是把它寫對。
 - **沒有測試釘住這一則。** 改的是註解與一個等價的型別，`ArticlesTheFeedShowed`
   既有的行為測試（`OneArticleTest`）一條都沒動，也一條都不該動。
+
+---
+
+## 50. 第 45 則那張付款表的「左右」那一列是錯的，文章有付
+
+> **這一則更正第 45 則的表格，但不改寫它。** 45 則的程式是對的，錯的是它自己那張表。
+
+**內容** —— 45 則的 inset 付款表最後一列寫：
+
+| inset | 誰付 |
+|---|---|
+| 左右 | `Screen` 那層 `Scaffold`（`systemBars.only(Horizontal)`）；文章一分不付（第 34 則） |
+
+**「文章一分不付」不成立。** `DetailScreen` 在 `verticalScroll` 之內那個 `Column` 上掛的是
+`.navigationBarsPadding()`，而 `WindowInsets.navigationBars` **在橫向 ＋ 三鍵導覽時
+有左或右的分量**（導覽列在那個模式下貼在畫面的一側，不在底下）。所以文章在那個組合下
+是有付左右的，付的人是同一行 `navigationBarsPadding()`。
+
+有趣的是**同一張表的上一列已經把這件事寫對了**——「導覽列 …… 文章：`DetailScreen` 在
+`verticalScroll` 之內的 `navigationBarsPadding()`」。兩列講的是同一行程式碼，
+一列說它付、一列說它不付。
+
+**正確的那一列**：
+
+| inset | 誰付 |
+|---|---|
+| 左右 | Reading／Saved：`Screen` 那層 `Scaffold`（`systemBars.only(Horizontal)`）；文章：**沒有專門付左右的人，但 `navigationBarsPadding()` 在橫向三鍵時會連帶付掉導覽列那一側**。直立時、以及手勢導覽時，那個分量是 0，表面上就跟「不付」一樣 |
+
+**為什麼不是程式該改** —— 因為它現在就是對的。文章要的正是「不要被導覽列蓋住」，
+而 `navigationBarsPadding()` 不分方向地回答了這件事。第 34 則說文章自己畫邊界、
+不要外框替它扣，那條仍然成立：扣的人是文章自己。
+
+**取捨與限制** —— **一樣沒有機器驗證，而且橫向三鍵這個組合沒有實機看過。**
+這一則靠的是 `navigationBarsPadding` 的定義（它套的是 `WindowInsets.navigationBars`
+的四邊，而不是只有 `bottom`），不是一張截圖。要證明它，得在橫向三鍵的裝置上截一張。
