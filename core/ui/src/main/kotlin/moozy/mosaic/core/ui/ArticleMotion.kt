@@ -3,6 +3,8 @@ package moozy.mosaic.core.ui
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -36,6 +38,21 @@ fun ProvideArticleMotion(
  * Bounds rather than an element, because the two ends hold different things: a
  * title beside a thumbnail on one side, a whole article on the other. What carries
  * across is the rectangle, and the contents cross-fade inside it.
+ *
+ * [SharedTransitionScope.sharedBounds] already defaults `enter` and `exit` to
+ * these two, and the container transform in the Compose documentation passes them
+ * anyway. So does this, for the reason that example does: **this** is the only
+ * cross-fade in the transition. The screens themselves no longer fade past each
+ * other (see `CardBecomesArticle` in `:navigation`), so the one place a card's
+ * contents become an article's contents is inside the rectangle carrying them,
+ * and it should be readable here rather than inherited from a default.
+ *
+ * A caller puts its size modifiers *after* this one. That is what the Compose
+ * documentation asks for -- *"Place size modifiers after the shared element
+ * modifiers"* -- and, more to the point, it has to be the same on both sides:
+ * modifiers before this one decide the bounds it animates, modifiers after it
+ * measure what sits inside them, so a card sized before and an article sized
+ * after are two different measurements of one rectangle.
  */
 @Composable
 fun Modifier.sharedArticleCard(id: ArticleId): Modifier {
@@ -44,6 +61,8 @@ fun Modifier.sharedArticleCard(id: ArticleId): Modifier {
         this@sharedArticleCard.sharedBounds(
             sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.CARD)),
             animatedVisibilityScope = motion.visibility,
+            enter = fadeIn(),
+            exit = fadeOut(),
             resizeMode = ResizeMode.scaleToBounds(),
         )
     }

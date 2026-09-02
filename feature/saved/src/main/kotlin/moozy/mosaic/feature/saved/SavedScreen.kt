@@ -168,7 +168,11 @@ private fun SavedCard(
 ) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth().sharedArticleCard(article.id),
+        // The bounds first and the width after it, the same way round as the feed's
+        // cards and as the article screen: both ends of a shared rectangle have to
+        // agree about which modifiers decide the bounds and which measure what is
+        // inside them.
+        modifier = modifier.sharedArticleCard(article.id).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {

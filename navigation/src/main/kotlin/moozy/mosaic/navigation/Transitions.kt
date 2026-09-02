@@ -3,6 +3,8 @@ package moozy.mosaic.navigation
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -45,20 +47,49 @@ internal val LateralSwitch: Map<String, Any> = metadata {
 /**
  * The article is a child of the list it was opened from, so the card carries it.
  *
- * A fade, and nothing else. That is not the absence of a transition: the card's
- * bounds are already growing into the article underneath this, and a screen that
- * also slid would be two motions describing one journey, disagreeing about where
- * the reader is looking. The push and the pop are the same fade because the card
- * is what reverses, not the screen.
+ * **The article fades; the list does not.** Both fading was one motion too many.
+ * The container transform is already three things happening at once -- a
+ * rectangle growing, a card's contents leaving it, an article's contents
+ * arriving in it -- and a second full-screen cross-fade laid over that is the
+ * loudest of the four while being the one that says the least. The card's growth
+ * is what the reader is meant to follow, and it was the quietest thing on screen.
+ *
+ * So each direction moves exactly one layer. Going in, the article's own frame --
+ * the background and the bar at the top, which belong to neither container --
+ * fades in over a list that stays where it was. Coming back, that frame fades
+ * away again and the list is simply there, the way it never stopped being. What
+ * crosses between the two *contents* is `sharedArticleCard`'s own fade, inside
+ * the rectangle that is travelling, which is where the container-transform
+ * pattern puts it.
+ *
+ * The two ways back ask for a z-index because the layer that fades has to be the
+ * layer on top: `AnimatedContent` draws the arriving screen above the leaving
+ * one, and a list arriving at full opacity above the article would cover the
+ * fade rather than be revealed by it.
  *
  * On `ArticleKey` because that is the entry on top both when it arrives and when
  * it leaves.
  */
 internal val CardBecomesArticle: Map<String, Any> = metadata {
-    put(NavDisplay.TransitionKey) { fadeIn() togetherWith fadeOut() }
-    put(NavDisplay.PopTransitionKey) { fadeIn() togetherWith fadeOut() }
-    put(NavDisplay.PredictivePopTransitionKey) { _ -> fadeIn() togetherWith fadeOut() }
+    put(NavDisplay.TransitionKey) { fadeIn() togetherWith ExitTransition.None }
+    put(NavDisplay.PopTransitionKey) { articleFadesAway() }
+    put(NavDisplay.PredictivePopTransitionKey) { _ -> articleFadesAway() }
 }
+
+/**
+ * The article leaving, over a list that never moved.
+ *
+ * Written out rather than composed with `togetherWith` because that infix leaves
+ * the z-index at its default, and the default is the wrong way round here.
+ */
+private fun articleFadesAway(): ContentTransform = ContentTransform(
+    targetContentEnter = EnterTransition.None,
+    initialContentExit = fadeOut(),
+    targetContentZIndex = BENEATH,
+)
+
+/** The list the reader is going back to belongs under the article leaving it. */
+private const val BENEATH = -1f
 
 /**
  * One screen leaving the way the other arrives.

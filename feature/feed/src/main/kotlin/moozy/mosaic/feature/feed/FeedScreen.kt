@@ -257,7 +257,11 @@ private fun ArticleList(
 private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth().sharedArticleCard(article.id),
+        // The bounds first and the width after it. The article screen sizes itself
+        // after its own bounds as well, and matching items have to agree about
+        // that: what comes before the shared modifier decides the rectangle that
+        // travels, what comes after it measures the contents that sit inside.
+        modifier = modifier.sharedArticleCard(article.id).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -308,11 +312,13 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
 @Composable
 private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        // The bounds first and the clip after it, so the rounded corners are drawn
-        // on the row rather than on the rectangle that is travelling.
+        // The bounds first, then the width, then the clip. The width goes after
+        // for the reason it does on the lead story; the clip stays after that so
+        // the rounded corners are drawn on the row rather than on the rectangle
+        // that is travelling.
         modifier = modifier
-            .fillMaxWidth()
             .sharedArticleCard(article.id)
+            .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .padding(vertical = 4.dp),
