@@ -356,14 +356,28 @@ private val ArticleEnd.other: ArticleEnd
  * would instead give the arriving end one frame at the radius it is going to
  * finish at, before the animation it should have started from was allowed to
  * exist -- which is a jump at the exact moment a reader is watching for movement.
+ *
+ * **[radius] is read before the gate rather than inside the branch it belongs to,
+ * and that is not an accident.** A layer block re-runs when something it read last
+ * time changes, so what it reads decides what can wake it. `isMatchFound` is a
+ * getter over three things and only two of them are snapshot state: the third,
+ * `activeMatchDeferred`, is a plain field that can turn the flag true while
+ * nothing observable moves. Read inside the `if`, the unmatched branch never
+ * touches [radius], so a card whose match arrives by that door has nothing left to
+ * wake it and stays at [standingStill]. Read first, the animated value is on the
+ * block's read set for every card, and every card is therefore re-run on each
+ * frame of a transition -- which is when the flag can change and the only time
+ * this costs anything. It is one comparison per card per frame, and it buys the
+ * property the paragraph above claims to have.
  */
 private fun Modifier.roundedBy(
     radius: State<Dp>,
     standingStill: Dp,
     whileMatched: SharedContentState,
 ): Modifier = graphicsLayer {
+    val travelling = radius.value
     clip = true
-    shape = RoundedCornerShape(if (whileMatched.isMatchFound) radius.value else standingStill)
+    shape = RoundedCornerShape(if (whileMatched.isMatchFound) travelling else standingStill)
 }
 
 /**

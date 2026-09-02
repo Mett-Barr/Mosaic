@@ -1721,6 +1721,17 @@ later in the frame."* `graphicsLayer` 的 block 正好就是「這一幀稍後�
   修改前是 891 → 891 → 740（角在整平），修改後是 952 → 952 → 952（不動）。
   那是一次手動觀察，不是一個會自己跑的檢查。
 - **`animateDp` 仍然為每一張卡片註冊。** 見上，這是刻意的。
+- **這個閘有一道細縫，是第二個模型（Codex）找出來的，已經補上。**
+  `isMatchFound` 是三樣東西的 or，其中只有兩樣是 snapshot state：第三樣
+  `activeMatchDeferred` 讀的是 `requestToBeHandled`，一個普通欄位。
+  最初的寫法是 `if (isMatchFound) radius.value else standingStill`——沒配對的那一支
+  **不會讀 `radius`**，於是一張「配對是從那道門進來的」卡片，layer 的 read set 裡
+  沒有任何東西會再變，它就停在靜止半徑上。改成先把 `radius.value` 讀出來再判斷：
+  動畫值因此永遠在 read set 裡，轉場期間每一張卡片每一幀都會重跑一次 layer block，
+  而那正是旗標可能改變的唯一時段。代價是每張卡片每幀一次比較，換到的是
+  「在 draw 讀就一定看得到」這句話真的成立。
+  **這條細縫沒有在裝置上重現過**——它是讀 Compose 原始碼推出來的，
+  補它的理由是它便宜，不是它被看見過。
 
 ---
 
