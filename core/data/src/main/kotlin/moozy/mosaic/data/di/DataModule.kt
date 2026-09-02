@@ -17,11 +17,12 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import moozy.mosaic.data.article.NetworkArticleRepository
+import moozy.mosaic.data.article.SavedFirstArticleRepository
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
 import moozy.mosaic.data.saved.ImportSavedArticles
 import moozy.mosaic.data.saved.RoomSavedArticles
+import moozy.mosaic.data.saved.SavedArticleDao
 import moozy.mosaic.data.saved.SavedArticlesDatabase
 import moozy.mosaic.data.weather.FileWeatherStore
 import moozy.mosaic.data.weather.OpenMeteoApi
@@ -67,11 +68,17 @@ internal object DataModule {
      * where the process was killed -- and a list restored from disk cannot be
      * handed to Paging as a starting point, so it would be shown and then
      * replaced, which is a flicker rather than a feature.
+     *
+     * One article is the exception, and it is the repository's business rather
+     * than a screen's: the table of kept articles is handed over here so that
+     * "where does this article come from" is answered in one place. The dao does
+     * not leave this module -- what the app asks for is still the interface
+     * `:core:domain` declared.
      */
     @Provides
     @Singleton
-    fun articleRepository(api: SpaceflightNewsApi): ArticleRepository =
-        NetworkArticleRepository(api)
+    fun articleRepository(api: SpaceflightNewsApi, kept: SavedArticleDao): ArticleRepository =
+        SavedFirstArticleRepository(api = api, kept = kept)
 
     /**
      * Taipei, because the app has no location permission and asking for one to
@@ -116,6 +123,14 @@ internal object DataModule {
             .build()
 
     /**
+     * One dao, because two callers now read the same table and a table with two
+     * doors is how the two of them start disagreeing about what is in it.
+     */
+    @Provides
+    @Singleton
+    fun savedArticleDao(database: SavedArticlesDatabase): SavedArticleDao = database.saved()
+
+    /**
      * databaseBuilder does no I/O -- SQLite opens on the first query -- so this
      * singleton stays free to build on whichever thread first asks for it. The
      * file version read itself in its constructor, which did not.
@@ -123,10 +138,9 @@ internal object DataModule {
     @Provides
     @Singleton
     fun savedArticles(
-        database: SavedArticlesDatabase,
+        rows: SavedArticleDao,
         @ApplicationContext context: Context,
     ): SavedArticles {
-        val rows = database.saved()
         val clock = Clock { Instant.now() }
         return RoomSavedArticles(
             rows = rows,

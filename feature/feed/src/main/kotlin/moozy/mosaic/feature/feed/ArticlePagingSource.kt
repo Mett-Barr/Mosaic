@@ -5,6 +5,7 @@ import androidx.paging.PagingState
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticlesResult
+import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.repository.ArticleRepository
 
@@ -43,7 +44,13 @@ internal class ArticlePagingSource(
         // Null asks for the top of the list, which is exactly what Paging
         // means by a refresh with no key. Nothing here has to translate.
         return when (val answer = articles.articles(after = params.key)) {
-            is ArticlesResult.Loaded -> {
+            is ArticlesResult.Loaded -> if (answer.wasUnreadable()) {
+                // The count is the whole of the diagnosis: it says the page was
+                // not empty, it was unusable, which is what nobody could see
+                // from an empty list.
+                val detail = "A page of ${answer.dropped} rows arrived and none of them could be read."
+                LoadResult.Error(FeedRefused(FeedFailure.Unreadable(detail)))
+            } else {
                 val fresh = answer.articles.filterNot { it.id in alreadyGiven }
                 alreadyGiven += fresh.map { it.id }
                 LoadResult.Page(
@@ -58,6 +65,23 @@ internal class ArticlePagingSource(
             is ArticlesResult.Failed -> LoadResult.Error(FeedRefused(answer.reason))
         }
     }
+
+    /**
+     * A page that arrived and could not be used at all.
+     *
+     * The question is asked of [ArticlesResult.Loaded.articles] -- what the
+     * server sent -- and deliberately not of the list left after this generation
+     * removes what it has already given out. The two look identical from here,
+     * both empty, and they mean opposite things: a page emptied by
+     * de-duplication is a reader reaching the end of a list, and turning that
+     * into an error screen would put a failure in front of the most ordinary
+     * thing the feed does.
+     *
+     * Rows this app could not read are not a partial failure worth interrupting
+     * anybody over -- some arriving is a page -- so only losing all of them
+     * counts, and only when there were some to lose.
+     */
+    private fun ArticlesResult.Loaded.wasUnreadable(): Boolean = articles.isEmpty() && dropped > 0
 
     /**
      * Always the top.
