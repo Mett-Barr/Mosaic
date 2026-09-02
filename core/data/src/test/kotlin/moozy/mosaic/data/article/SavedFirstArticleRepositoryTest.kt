@@ -11,9 +11,13 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.time.Instant
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
+import moozy.mosaic.data.saved.SavedArticleDao
+import moozy.mosaic.data.saved.SavedArticleEntity
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.FeedFailure
@@ -30,12 +34,17 @@ import org.junit.Test
  * last layer where the difference still exists: one floor up they are both just a
  * screen with nothing on it.
  */
-class NetworkArticleRepositoryTest {
+class SavedFirstArticleRepositoryTest {
 
     private val requests = mutableListOf<HttpRequestData>()
 
-    private fun repositoryWith(engine: MockEngine) =
-        NetworkArticleRepository(SpaceflightNewsApi(spaceflightNewsClient(engine), Clock { NOW }))
+    // The feed half has one source and gains none, so the table this repository
+    // now also reads is empty in every test here: nothing about a page is
+    // supposed to change because of what a reader kept.
+    private fun repositoryWith(engine: MockEngine) = SavedFirstArticleRepository(
+        api = SpaceflightNewsApi(spaceflightNewsClient(engine), Clock { NOW }),
+        kept = NothingKept,
+    )
 
     private fun repositoryReturning(body: String) = repositoryWith(
         MockEngine { request ->
@@ -158,6 +167,14 @@ class NetworkArticleRepositoryTest {
     private fun assertFailed(result: ArticlesResult): FeedFailure {
         assertTrue("expected a failure, got $result", result is ArticlesResult.Failed)
         return (result as ArticlesResult.Failed).reason
+    }
+
+    private object NothingKept : SavedArticleDao {
+        override fun saved(): Flow<List<SavedArticleEntity>> = flowOf(emptyList())
+        override suspend fun find(id: String): SavedArticleEntity? = null
+        override suspend fun save(article: SavedArticleEntity) = Unit
+        override suspend fun saveAll(articles: List<SavedArticleEntity>) = Unit
+        override suspend fun forget(id: String) = Unit
     }
 
     private companion object {
