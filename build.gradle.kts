@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.detekt) apply false
     alias(libs.plugins.module.graph)
+    alias(libs.plugins.kover)
 }
 
 // The module split is only worth its cost if something checks it. The compiler
@@ -39,6 +40,48 @@ val allowedProjectDependencies = mapOf(
         ":feature:feed", ":feature:detail", ":feature:saved",
     ),
 )
+
+// Coverage is aggregated here because a per-module number answers the wrong
+// question: :core:domain is exercised largely by tests that live in the modules
+// above it, and read alone it would look untested. Kover is measurement, not a
+// gate -- no threshold is set, because a number that must go up is a number
+// people write tests against instead of against behaviour.
+dependencies {
+    listOf(
+        ":core:domain", ":core:data", ":core:ui",
+        ":feature:feed", ":feature:detail", ":feature:saved", ":app",
+    ).forEach { kover(project(it)) }
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                // Code this project did not write. Hilt, Room and Compose each
+                // generate classes that land in the same packages as the source,
+                // and counting them measures the annotation processors rather
+                // than the tests.
+                classes(
+                    "dagger.hilt.*",
+                    "hilt_aggregated_deps.*",
+                    "*_Factory",
+                    "*_Factory\$*",
+                    "*_HiltModules*",
+                    "*Hilt_*",
+                    "*_MembersInjector",
+                    "*_GeneratedInjector",
+                    "*_Impl",
+                    "*_Impl\$*",
+                    "*ComposableSingletons*",
+                    "*\$serializer",
+                )
+                // Deliberately NOT excluded: @Composable. Screens really are
+                // untested (DECISIONS.md 20), and a filter that hid them would
+                // turn the one number that says so into one that does not.
+            }
+        }
+    }
+}
 
 // Subprojects have to be evaluated before their declared dependencies can be read.
 evaluationDependsOnChildren()
