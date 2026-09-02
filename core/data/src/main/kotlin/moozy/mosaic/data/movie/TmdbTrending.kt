@@ -182,8 +182,9 @@ internal class TmdbTrending(
         val turnsOver = today.plusDays(1).atStartOfDay(zone).toInstant()
         return Duration.between(clock.now(), turnsOver)
             .toMillis()
-            // Also the floor on any wait, so a clock that jumps cannot turn this
-            // into a busy loop.
+            // A floor under *this* wait, so a clock that lands on or past the
+            // midnight it is waiting for cannot turn it into a busy loop. It is
+            // not a floor under the other two waits, and does not need to be.
             .coerceAtLeast(AFTER_A_FAILURE_MILLIS)
     }
 
@@ -225,5 +226,12 @@ internal class TmdbTrending(
 /** Long enough to survive a rotation, short enough not to outlive the screen. */
 private const val WATCHING_GRACE = 5_000L
 
-/** Also the floor on any wait, so a clock that jumps cannot become a busy loop. */
+/**
+ * The wait a refusal buys, and the floor under the wait for the next day.
+ *
+ * Not the floor under *any* wait, which is what this used to claim. What is
+ * left of a refusal's minute is served as whatever is left of it, down to a
+ * millisecond -- and it does not need a floor, because the wait it ends is the
+ * one that set it: the next turn of the loop asks rather than waits again.
+ */
 private const val AFTER_A_FAILURE_MILLIS = 60_000L
