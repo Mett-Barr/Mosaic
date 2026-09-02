@@ -56,6 +56,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.PictureSeat
 import moozy.mosaic.core.ui.sharedArticleAttribution
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
@@ -302,7 +303,7 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(LEAD_IMAGE_RATIO)
-                        .sharedArticleImage(article.id),
+                        .sharedArticleImage(article.id, PictureSeat.MEETING_AN_EDGE),
                 )
             }
             Column(
@@ -357,13 +358,12 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // Same rule as the lead story's picture, and here it means a
-                // square thumbnail: a row has no card drawn around it, so the
-                // only thing cutting this is the row's own rounded rectangle,
-                // and the thumbnail sits well inside it.
+                // The same rule as the lead story's picture, and here it comes out
+                // the other way: this thumbnail meets no edge of the row at all,
+                // so the row's corners never reach it and it rounds itself.
                 modifier = Modifier
                     .size(THUMBNAIL)
-                    .sharedArticleImage(article.id),
+                    .sharedArticleImage(article.id, PictureSeat.STANDING_ALONE),
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -61,6 +61,7 @@ import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.PictureSeat
 import moozy.mosaic.core.ui.sharedArticleAttribution
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
@@ -331,7 +332,7 @@ private fun Article(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
-                    .sharedArticleImage(id),
+                    .sharedArticleImage(id, PictureSeat.MEETING_AN_EDGE),
             )
         } else {
             // No picture, and the arrow floating above is there all the same. This

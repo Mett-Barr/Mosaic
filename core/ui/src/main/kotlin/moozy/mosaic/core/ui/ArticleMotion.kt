@@ -9,6 +9,7 @@ import androidx.compose.animation.SharedTransitionScope.SharedContentState
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -58,10 +59,38 @@ fun ProvideArticleMotion(
  * Each says where it is, and the one radius lives below, in one place, because the
  * two ends still have to agree about what the *other* one looks like.
  *
- * Only the container is told this. What is inside it is cut by it (see
- * [sharedArticleImage]) and has no end of its own to declare.
+ * Only the container is told this. A picture inside it says where it sits instead
+ * (see [PictureSeat]), because whether the container's corners reach it at all is
+ * a question about the layout and not about which end of the flight this is.
  */
 enum class ArticleEnd { IN_A_LIST, FILLING_THE_DISPLAY }
+
+/**
+ * Where a picture sits in the thing that holds it, which is what decides its corners.
+ *
+ * **A picture is cut by its container only where it actually meets the container's
+ * edge.** The lead story's photograph is the top of its card: it is flush with the
+ * card's left, right and top, so the two corners it needs are the card's own top
+ * two, and it gets them by asking for no shape and letting the card cut it. The
+ * article's photograph is the same arrangement one size up -- flush with three of
+ * the display's edges, square because there is no background left for a corner to
+ * be cut out of.
+ *
+ * A row's thumbnail is not that. It is a small square inset in its row -- four dp
+ * clear of the top and the bottom, a column of words clear of the right -- and the
+ * one edge it does share with the row, the left, is shared for ninety-two dp of a
+ * corner twenty dp across. So three of its corners are somewhere the container's
+ * clip cannot reach and the fourth is barely grazed by it, and being cut by the
+ * container amounts to not being cut. It has to carry its own.
+ *
+ * The bottom edge is the part that makes this a seat and not a radius: both
+ * pictures that meet an edge have words carrying on underneath them, and rounding
+ * their bottom corners would curve a photograph away from the paragraph it belongs
+ * to. That is one shape, and the thumbnail's four equal corners are another; there
+ * is no single radius that is right for both, which is why the caller says where it
+ * is rather than how round it is.
+ */
+enum class PictureSeat { MEETING_AN_EDGE, STANDING_ALONE }
 
 /** The corners a card keeps in either list. */
 private val CardCorner = 20.dp
@@ -103,8 +132,10 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
  * after are two different measurements of one rectangle.
  *
  * The clip declared here is not only this rectangle's. It is also the shape
- * anything nested inside it is cut to while the transition runs, which is what
- * [sharedArticleImage] leans on instead of declaring corners of its own.
+ * anything nested inside it is cut to while the transition runs, which is what a
+ * picture flush with this rectangle's edge leans on instead of declaring corners
+ * of its own -- and, for one that is nowhere near it, why that is not enough
+ * (see [PictureSeat]).
  *
  * **The two ends are lined up by their top edges and not by their middles.**
  * `scaleToBounds` measures each end once at the size it will finish at and then
@@ -154,12 +185,9 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
  * An element and not bounds: it is the same photograph at both ends, so there is
  * nothing to cross-fade between -- only a rectangle to travel and a crop to grow.
  *
- * **It asks for no shape, at either end.** A picture in a list is the top of a
- * card with the words carrying on below it, so the corners it wants are the card's
- * top two and nothing else -- rounding all four curves its bottom edge away from
- * the text that follows. Filling the display it wants none at all. Both of those
- * are already what the container it sits in cuts it to, and the container is the
- * one thing that knows which end this is.
+ * **[at] decides whether it asks for a shape, and most of the time it does not.**
+ * A picture flush with the edge of what holds it is cut by that container, and the
+ * container is the one thing that knows how round its own corners currently are.
  *
  * That holds while the picture is in the air as well, which is the part worth
  * saying out loud. The overlay a shared element is lifted into *"will escape the
@@ -171,17 +199,44 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
  * The parent here is [sharedArticleCard], whose clip is the one already travelling
  * between the two radii. Not passing one is therefore not an omission: it is how
  * the picture is cut by the card on every frame rather than on most of them.
+ *
+ * **[PictureSeat.STANDING_ALONE] is where that whole argument stops applying**, and
+ * the clip is the picture's own. Inheriting a clip is only worth anything to
+ * something the clip reaches; a thumbnail inset in a row is not reached by the row's
+ * corners standing still or flying, so it is handed the shape the design gives an
+ * inset picture and keeps it either way.
  */
 @Composable
-fun Modifier.sharedArticleImage(id: ArticleId): Modifier {
-    val motion = LocalArticleMotion.current ?: return this
+fun Modifier.sharedArticleImage(id: ArticleId, at: PictureSeat): Modifier {
+    val motion = LocalArticleMotion.current ?: return this.ownCorners(at)
     return with(motion.scope) {
-        this@sharedArticleImage.sharedElement(
-            sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
-            animatedVisibilityScope = motion.visibility,
-        )
+        this@sharedArticleImage
+            .sharedElement(
+                sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
+                animatedVisibilityScope = motion.visibility,
+            )
+            .ownCorners(at)
     }
 }
+
+/**
+ * The corners a picture cuts for itself, which is none unless nothing else will.
+ *
+ * `medium` and not the card's radius, because it is not the card: the design draws
+ * an inset thumbnail with the same corner it gives every other small inset thing,
+ * and [CardCorner] is the radius of the rectangle around all of them.
+ *
+ * Inside the shared element rather than in front of it, so that it is the picture
+ * being clipped and not the element carrying it. In front, the clip would be an
+ * ancestor of the shared element -- and an element lifted into the overlay
+ * *"will escape the parent's bounds and its layer transformations"*, so the
+ * corners would be there while the picture sat still and gone for the length of
+ * every flight. Behind it, the picture is measured to whatever bounds it has this
+ * frame and then cut, which is the same sentence standing still and moving.
+ */
+@Composable
+private fun Modifier.ownCorners(at: PictureSeat): Modifier =
+    if (at == PictureSeat.STANDING_ALONE) clip(MaterialTheme.shapes.medium) else this
 
 /**
  * The article's title, moving to where the article screen puts it.
