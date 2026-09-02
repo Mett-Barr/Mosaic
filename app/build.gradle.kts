@@ -74,6 +74,10 @@ kotlin {
 }
 
 dependencies {
+    // Slack's Compose lint rules. Android's own lint says almost nothing about
+    // Compose conventions -- parameter order, modifier handling, what a
+    // composable may return -- and those are the ones easy to get wrong here.
+    lintChecks(libs.compose.lint.checks)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     implementation(project(":core:data"))
