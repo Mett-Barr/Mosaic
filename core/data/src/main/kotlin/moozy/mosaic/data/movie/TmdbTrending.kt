@@ -4,6 +4,7 @@ import io.ktor.client.call.NoTransformationFoundException
 import io.ktor.serialization.ContentConvertException
 import java.io.IOException
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.coroutines.cancellation.CancellationException
@@ -40,7 +41,10 @@ import moozy.mosaic.domain.repository.MovieRepository
  *
  * The value is a list, and a failure is not a state this app shows: the reader
  * came for the articles, so a failed request leaves whatever was there and the
- * strip is simply shorter or absent.
+ * strip is simply shorter or absent. **Which is exactly why the minute a refusal
+ * buys has to outlive the watcher who paid for it** ([refusedAt]): nothing on
+ * screen would ever show that the same request is being made and refused on
+ * every visit to the feed.
  *
  * [zone] is handed in rather than read here for the same reason [clock] is. Whose
  * midnight the day turns at is a question about the device, and a class that
@@ -65,6 +69,29 @@ internal class TmdbTrending(
     internal var lastProblem: String? = null
         private set
 
+    /**
+     * When the last attempt failed, if the last one did.
+     *
+     * **On the repository and not in the flow, which is the whole point of it.**
+     * The wait after a failure used to be a `delay` in the flow's body -- and
+     * the flow is the thing [SharingStarted.WhileSubscribed] tears down five
+     * seconds after the last watcher leaves, then starts again from the top for
+     * the next one. So the wait was thrown away by exactly the event it exists
+     * to survive: Reading to Saved and back, or out of the app and back, asked
+     * again immediately. A token that has been revoked is a 401 on every visit
+     * to the feed, and nothing ever says so, because a failure here means a
+     * shorter strip and nothing else.
+     *
+     * The day that arrived is written to a file and the day that did not is
+     * kept here, and the asymmetry is deliberate. What a file buys is surviving
+     * the process, and a fresh process is a reader who has been away long
+     * enough for the system to reclaim the app -- which is far longer than a
+     * minute, so writing this down would only ever be read back after it had
+     * expired. `DECISIONS.md` 41 draws the same line for the articles the feed
+     * showed: a cold start is worth a fresh request.
+     */
+    private var refusedAt: Instant? = null
+
     override val trending: StateFlow<List<Movie>> =
         films().stateIn(scope, SharingStarted.WhileSubscribed(WATCHING_GRACE), emptyList())
 
@@ -73,15 +100,22 @@ internal class TmdbTrending(
         if (held != null) emit(held.movies)
         while (true) {
             val today = clock.now().atZone(zone).toLocalDate()
+            val stillOwed = whatIsLeftOfTheWait()
             val wait = if (held?.stillCurrentOn(today) == true) {
                 // Today's list is today's list. There is nothing to be had by
                 // asking, so the only thing worth waiting for is tomorrow.
                 untilTheDayTurns(today)
+            } else if (stillOwed > 0) {
+                // A refusal already bought a wait and it has not run out. Who
+                // was watching when it was bought is not part of the deal.
+                stillOwed
             } else {
                 val arrived = fetch(today)
                 if (arrived == null) {
+                    refusedAt = clock.now()
                     AFTER_A_FAILURE_MILLIS
                 } else {
+                    refusedAt = null
                     held = arrived
                     store.write(arrived)
                     emit(arrived.movies)
@@ -90,6 +124,21 @@ internal class TmdbTrending(
             }
             delay(wait)
         }
+    }
+
+    /**
+     * How much of the minute a refusal bought has not been served yet.
+     *
+     * Clamped at both ends rather than trusted, because it is arithmetic on a
+     * clock the device owns. A clock that jumps forward lets the wait end early
+     * and costs one request, which is the cheap direction; a clock that jumps
+     * backwards would otherwise turn one refusal into a silence with no end to
+     * it, which is not.
+     */
+    private fun whatIsLeftOfTheWait(): Long {
+        val refused = refusedAt ?: return 0
+        val served = Duration.between(refused, clock.now()).toMillis()
+        return (AFTER_A_FAILURE_MILLIS - served).coerceIn(0, AFTER_A_FAILURE_MILLIS)
     }
 
     /**

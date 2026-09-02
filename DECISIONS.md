@@ -2061,3 +2061,70 @@ cross-fade」**——那句話從第 39 則把這兩個 modifier 加進來的那
 - **它現在依賴一件沒有東西在檢查的事**：任何人日後在 `sharedArticleCard` 裡面再加一個
   `sharedBounds`，忘了寫 `None`，第三層就回來了。KDoc 寫下了這件事，
   但 KDoc 不是 lint 規則。
+
+---
+
+## 48. 失敗買到的那一分鐘放在 repository 上，不放在會被拆掉的那條 flow 裡
+
+**症狀** —— TMDB 的 token 打錯或被撤銷之後，**每一次回到 Reading 都會再發一次請求、
+再拿一次 401**，而且畫面上永遠看不出來——第 40 則定下的規則是「失敗就是條子短一點或不見」，
+所以沒有任何東西會說出口。Reading→Saved→Reading 一次、切到背景再回來一次，
+一整天下來次數沒有上限。
+
+**根因** —— 那一分鐘的退避是 `films()` 這個 flow **函式體內的一行 `delay`**：
+
+```kotlin
+val arrived = fetch(today)
+if (arrived == null) AFTER_A_FAILURE_MILLIS else { ... }
+...
+delay(wait)
+```
+
+而這條 flow 是 `stateIn(scope, SharingStarted.WhileSubscribed(5_000), ...)` 共享的。
+最後一個訂閱者離開五秒後 upstream 被取消，**那個 `delay` 跟著死掉**；
+下一個訂閱者讓它從頭再跑一次，`store.read()` 讀回來的是 `null`
+（成功才寫檔，失敗什麼都不寫），於是立刻又 `fetch` 一次。
+**退避被它本來要擋的那個事件本人清掉了。**
+
+`NoMovies` 只擋得住「token 是空字串」這一種；打錯、過期、被撤銷都會走到這裡。
+
+**選了** —— repository 上多一個 `private var refusedAt: Instant?`，
+`fetch` 失敗時寫進去、成功時清掉，flow 每一圈在 `fetch` 之前先問
+`whatIsLeftOfTheWait()`。repository 是 `@Singleton`，所以它活得比 flow 久，
+也活得比任何一個畫面久。
+
+**為什麼不寫進檔案** —— 「成功的那一天寫檔、失敗的那一次不寫」是刻意的不對稱。
+檔案買到的是**撐過 process 被殺**，而 process 被殺代表讀者離開久到系統回收了這個 app——
+那遠比一分鐘長，寫下去也只會在過期之後才被讀回來。第 41 則對「feed 剛畫過的文章」
+畫的是同一條線：冷啟動值得一次重新請求。
+
+**為什麼夾在 `stillCurrentOn` 之後而不是之前** —— 手上那份如果還是今天的，
+根本不會走到 `fetch`，這時候還在等的那一分鐘沒有意義；等的對象是「下一次值得問」，
+不是「下一次可以問」。順序寫反會讓一次失敗之後、隔天午夜的喚醒被這一分鐘推遲。
+
+**兩端都夾** —— `coerceIn(0, AFTER_A_FAILURE_MILLIS)`。時鐘往前跳讓等待提早結束，
+代價是一次請求；時鐘往後跳如果不夾，一次失敗會變成一段沒有盡頭的沉默。
+便宜的那個方向留著，貴的那個夾掉。
+
+**當時還考慮**
+
+- **把 `SharingStarted.WhileSubscribed` 換成 `Eagerly` 或 `Lazily`，讓 flow 不被拆掉。**
+  那會讓沒有人看的時候還在跑迴圈，而「沒有人看就不問」是第 40 則的主張之一，
+  也是這個 app 三條 freshness 規則共同的前提。
+- **把失敗的那一天也寫進 `trending-movies.json`（例如 `refusedFor` 欄位）。** 見上：
+  檔案解的是 process 邊界，這裡的問題在 process 之內。而且會讓存放器的格式為了
+  一個活一分鐘的值改版。
+- **退避改成指數式。** 這一則不動那個數字。60 秒是既有的選擇，這一則要修的是
+  「它根本沒有生效」，兩件事分開改才看得出哪一次改了什麼。
+- **在 `lastProblem` 上多開一個「這個 token 壞掉了」的狀態給畫面看。** 第 40 則已經
+  裁決失敗不進畫面。要改那條是另一則的事。
+
+**取捨與限制**
+
+- **冷啟動仍然會再問一次。** 見上，這是選的，不是漏的。
+- **它擋的是「同一個 process 內的重複請求」，不是「總請求數」。** 一個持續失敗的
+  token 每分鐘仍然會被問一次，只要有人在看。
+- **測試量的是虛擬時鐘上的時間差，不是請求數。** `MockEngine` 在自己的 dispatcher 上回答，
+  「請求已經發出去了」不是 test scheduler 知道的事，單純數次數會有競態
+  （第一版測試就是這樣紅在錯的那一行上）。改成從 engine 送一個 channel 訊息、
+  由測試 `receive()` 等它，再讀 `currentTime` 看它等了多久。
