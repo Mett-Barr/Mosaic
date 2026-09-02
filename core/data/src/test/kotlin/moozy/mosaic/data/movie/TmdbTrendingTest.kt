@@ -25,6 +25,7 @@ import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.TrendingMovies
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 /**
@@ -210,6 +211,7 @@ class TmdbTrendingTest {
 
         val watching = launch { films.trending.collect {} }
         asked.receive()
+        settleUntil { films.lastProblem != null }
         assertEquals("the first reader pays for the one attempt", 1, requests)
         assertEquals("and pays for it immediately", 0L, currentTime)
 
@@ -268,6 +270,28 @@ class TmdbTrendingTest {
     }
 
     /**
+     * Let work that is happening on another thread land on this one.
+     *
+     * `MockEngine` answers on its own dispatcher, so a failure travels back
+     * through a continuation the test scheduler has not been handed yet.
+     * [runCurrent] runs whatever has arrived **without moving the virtual
+     * clock**, which is the part that matters: the assertions below are about
+     * what the clock says, so nothing here may advance it. The pause is the
+     * only way to give the other thread a turn -- there is nothing on this
+     * scheduler to wait for, and waiting on the virtual clock would run the
+     * very retry the test is measuring.
+     */
+    private fun TestScope.settleUntil(landed: () -> Boolean) {
+        repeat(SETTLING_TRIES) {
+            runCurrent()
+            if (landed()) return
+            @Suppress("ForbiddenMethodCall")
+            Thread.sleep(1)
+        }
+        fail("the repository never settled")
+    }
+
+    /**
      * A source that says no, and says so out loud.
      *
      * The counter alone cannot be read from the test: `MockEngine` answers on
@@ -318,3 +342,6 @@ private const val WATCHING_GRACE_LAPSED = 6_000L
 
 /** The wait a refused day buys, which the repository states as a minute. */
 private const val AFTER_A_FAILURE = 60_000L
+
+/** A second of real milliseconds, which is a very long time for a mock to answer in. */
+private const val SETTLING_TRIES = 1_000
