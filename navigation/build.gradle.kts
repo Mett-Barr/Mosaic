@@ -56,16 +56,16 @@ dependencies {
     lintChecks(libs.compose.lint.checks)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
-    // api, not implementation: the three features stay on :app's compile
-    // classpath, and that is where Hilt generates the component naming their
-    // @HiltViewModel classes. Measured, implementation also produced a complete
-    // component here -- the Hilt plugin's aggregating task reads the runtime
-    // classpath -- but a binding that went missing would surface when a screen
-    // is opened, not when the build runs, and that has not been checked on a
-    // device. See DECISIONS.md 31.
-    api(project(":feature:feed"))
-    api(project(":feature:detail"))
-    api(project(":feature:saved"))
+    // implementation, not api. This module is the only one that should be able
+    // to reach a feature; api would hand that reach to :app as well, and then
+    // the rule saying :app must not depend on a feature would only be checking
+    // that :app does not say so out loud. Hilt still finds the three
+    // @HiltViewModel classes: its aggregating task reads the runtime classpath,
+    // which these are on either way, and the three screens were opened on a
+    // device to confirm it rather than inferred. See DECISIONS.md 31.
+    implementation(project(":feature:feed"))
+    implementation(project(":feature:detail"))
+    implementation(project(":feature:saved"))
     implementation(project(":core:domain"))
 
     implementation(libs.androidx.lifecycle.runtime.ktx)

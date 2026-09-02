@@ -946,12 +946,15 @@ back stack 的兩個操作（`goTo`／`goToDestination`），以及上下兩條 
 **驗證過新規則會失敗** —— 暫時讓 `:app` 相依 `:feature:feed`，檢查如預期報出
 `:app must not depend on :feature:feed`，然後還原。第 2 則對檢查的標準在這一條上一樣適用。
 
-**feature 那三條邊用 `api`** —— 讓 feature 留在 `:app` 的 compile classpath 上，因為
-Hilt 的元件是在 `:app` 產生的，而它要點名三個 `@HiltViewModel`。**實測 `implementation`
-也產得出完整的元件**（Hilt Gradle plugin 的 aggregating task 讀的是 runtime classpath），
-所以「非 `api` 不可」講得太滿。留 `api` 的理由是賠率不對稱：繫結掉了不會讓建置變紅，
-它在讀者點開畫面的那一刻才炸，而這一版**沒有在實機上跑過**。驗證只做到讀產生出來的
-`DaggerMosaicApp_HiltComponents_SingletonC`——兩種寫法的 ViewModel map 裡三個 key 都在。
+**feature 那三條邊用 `implementation`** —— 一開始寫成 `api`，理由是讓 feature 留在 `:app`
+的 compile classpath 上，因為 Hilt 的元件在 `:app` 產生、要點名三個 `@HiltViewModel`。
+實測 `implementation` 也產得出完整的元件（Hilt Gradle plugin 的 aggregating task 讀的是
+runtime classpath），而三個畫面在 `implementation` 下也在模擬器上逐一開過、書籤存取正常。
+
+**改回來的理由是 `api` 會把這整條規則變成一句空話**：`api` 是傳遞性的，`:app` 因此
+仍然寫得出 `import moozy.mosaic.feature.feed.FeedScreen`，而 `checkModuleDependencies`
+只讀宣告出來的 `ProjectDependency`，看不到這件事。那條規則會變成「檢查 `:app` 有沒有
+把話說出口」，而不是「檢查 `:app` 碰不碰得到」。獨立審查的第二個模型也指向同一點。
 
 **取捨** —— **耦合沒有消失，它搬到了一個名字說得出它是什麼的模組裡。**`:navigation`
 依然看得到三個 feature，這無法迴避：接線的人必須認識被接的兩端。換到的是那份知識
