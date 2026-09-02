@@ -82,6 +82,26 @@ data class TrendingMovies(
      * list computed for a *later* day look stale, and re-asking cannot improve on
      * a day that has not happened yet. This is the same shape as the weather's
      * refusal to treat a reading stamped in the future as overdue.
+     *
+     * **But only as far ahead as that argument reaches, which is [AHEAD] days.**
+     * Crossing a date line moves the date by one; being corrected after running
+     * ahead moves it by about as much. A device that came up before it could
+     * reach a time server is a different thing entirely: it can stamp a day
+     * years ahead, and that day is written to a file. Without a bound the strip
+     * would then be "still current" until the calendar caught up with it --
+     * never asked again, and no way back, because the only thing that would
+     * clear it is the answer it is refusing to go and get.
      */
-    fun stillCurrentOn(day: LocalDate): Boolean = !day.isAfter(forDay)
+    fun stillCurrentOn(day: LocalDate): Boolean =
+        !day.isAfter(forDay) && !day.isBefore(forDay.minusDays(AHEAD))
 }
+
+/**
+ * How far ahead of the reader's day a stored day is still believable.
+ *
+ * Two rather than one: a date line is worth a day, and a device that is a day
+ * out and *also* on the other side of one should not have to pay for both.
+ * Beyond that the likeliest explanation stops being geography and starts being
+ * a clock that has not been set.
+ */
+private const val AHEAD = 2L
