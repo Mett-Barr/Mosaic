@@ -91,4 +91,10 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.kotlinx.serialization.json)
+
+    // The first tests this module has. What they cover is not a screen -- those
+    // still need a device (DECISIONS.md 20) -- but the reading of the back stack
+    // that decides whether the bar at the bottom is on it, which is plain Kotlin
+    // over three keys and needs no Android to answer.
+    testImplementation(libs.junit)
 }
