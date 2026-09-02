@@ -1,0 +1,829 @@
+<title>Mosaic 接線圖</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+
+<style>
+:root {
+  --paper:      #FAFBF7;
+  --raised:     #FFFFFF;
+  --sunken:     #F1F3EC;
+  --ink:        #161A13;
+  --ink-soft:   #4A5347;
+  --ink-faint:  #7C857A;
+  --rule:       #DEE2D7;
+  --rule-soft:  #EAEDE5;
+
+  --app:        #2C4162;
+  --android:    #1E8B4E;
+  --kotlin:     #6B3FD4;
+  --accent:     #1E8B4E;
+  --accent-ink: #FFFFFF;
+
+  --shadow:     0 1px 2px rgba(22,26,19,.05), 0 8px 24px -12px rgba(22,26,19,.18);
+  --maxw: 1080px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:     #101310;
+    --raised:    #181C17;
+    --sunken:    #1E231D;
+    --ink:       #E8EDE4;
+    --ink-soft:  #A5AEA1;
+    --ink-faint: #6F786C;
+    --rule:      #2A302A;
+    --rule-soft: #21261F;
+
+    --app:       #7FA3D8;
+    --android:   #3BD482;
+    --kotlin:    #A585FF;
+    --accent:    #3BD482;
+    --accent-ink:#0C1109;
+
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --paper:     #101310;
+  --raised:    #181C17;
+  --sunken:    #1E231D;
+  --ink:       #E8EDE4;
+  --ink-soft:  #A5AEA1;
+  --ink-faint: #6F786C;
+  --rule:      #2A302A;
+  --rule-soft: #21261F;
+
+  --app:       #7FA3D8;
+  --android:   #3BD482;
+  --kotlin:    #A585FF;
+  --accent:    #3BD482;
+  --accent-ink:#0C1109;
+
+  --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Noto Sans TC", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
+
+/* ---------- masthead ---------- */
+
+header.masthead {
+  border-bottom: 1px solid var(--rule);
+  padding: 68px 0 40px;
+}
+.eyebrow {
+  font-family: Archivo, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 18px;
+}
+h1 {
+  font-family: Archivo, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(38px, 6vw, 62px);
+  line-height: 1.02;
+  letter-spacing: -.03em;
+  margin: 0 0 20px;
+  text-wrap: balance;
+}
+.standfirst {
+  max-width: 62ch;
+  font-size: 18px;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.standfirst strong { color: var(--ink); font-weight: 500; }
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 34px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--raised);
+}
+.fact {
+  flex: 1 1 120px;
+  padding: 14px 18px;
+  border-right: 1px solid var(--rule);
+}
+.fact:last-child { border-right: 0; }
+.fact dt {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 3px;
+}
+.fact dd {
+  margin: 0;
+  font-family: Archivo, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* ---------- sections ---------- */
+
+section { padding: 64px 0; border-bottom: 1px solid var(--rule-soft); }
+section:last-of-type { border-bottom: 0; }
+
+h2 {
+  font-family: Archivo, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: -.02em;
+  margin: 0 0 8px;
+}
+.lede { color: var(--ink-soft); max-width: 64ch; margin: 0 0 30px; }
+
+/* ---------- the graph ---------- */
+
+.graph-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+@media (max-width: 900px) { .graph-shell { grid-template-columns: 1fr; } }
+
+.graph-frame {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+svg.graph { display: block; width: 100%; min-width: 560px; height: auto; }
+
+.node rect {
+  fill: var(--sunken);
+  stroke: var(--rule);
+  stroke-width: 1.5;
+  transition: fill .18s, stroke .18s, stroke-width .18s;
+}
+.node .kind {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  fill: var(--ink-faint);
+}
+.node .name {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.node .loc {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 10px;
+  fill: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.node { cursor: pointer; }
+.node:focus { outline: none; }
+.node:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+.node:hover rect { stroke: var(--ink-faint); }
+
+.node[data-kind="app"] .swatch     { fill: var(--app); }
+.node[data-kind="android"] .swatch { fill: var(--android); }
+.node[data-kind="kotlin"] .swatch  { fill: var(--kotlin); }
+
+.edge {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 1.5;
+  transition: stroke .18s, stroke-width .18s, opacity .18s;
+}
+.graph.has-selection .edge { opacity: .18; }
+.graph.has-selection .edge.lit { opacity: 1; stroke: var(--accent); stroke-width: 2.5; }
+.graph.has-selection .node rect { opacity: .38; }
+.graph.has-selection .node.lit rect { opacity: 1; }
+.graph.has-selection .node.lit[data-role="source"] rect { stroke: var(--accent); stroke-width: 2.5; }
+.graph.has-selection .node text { opacity: .38; }
+.graph.has-selection .node.lit text { opacity: 1; }
+
+/* ---------- side panel ---------- */
+
+.panel {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 20px;
+}
+.panel-hint { color: var(--ink-faint); font-size: 14px; margin: 0; }
+.panel h3 {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 2px;
+  color: var(--ink);
+}
+.panel .role {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 14px;
+}
+.panel .job { margin: 0 0 16px; font-size: 15px; }
+.panel h4 {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 16px 0 7px;
+}
+.panel ul { margin: 0; padding-left: 0; list-style: none; }
+.panel li {
+  font-size: 14px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--rule-soft);
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+.panel li:last-child { border-bottom: 0; }
+.panel li code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.panel li span { color: var(--ink-soft); }
+.panel .none { color: var(--ink-faint); font-size: 14px; font-style: italic; }
+.clear-btn {
+  margin-top: 18px;
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 12px;
+  letter-spacing: .04em;
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.clear-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+
+/* ---------- legend ---------- */
+
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px; }
+.legend div { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-soft); }
+.legend i { width: 11px; height: 11px; border-radius: 3px; display: block; }
+
+/* ---------- ui layers ---------- */
+
+.layers { display: grid; gap: 0; }
+.layer {
+  display: grid;
+  grid-template-columns: 190px minmax(0,1fr);
+  gap: 26px;
+  padding: 20px 0;
+  border-bottom: 1px dashed var(--rule);
+  align-items: start;
+}
+.layer:last-child { border-bottom: 0; }
+@media (max-width: 720px) { .layer { grid-template-columns: 1fr; gap: 10px; } }
+.layer-tag { position: relative; padding-left: 18px; }
+.layer-tag::before {
+  content: "";
+  position: absolute; left: 4px; top: 8px; bottom: -28px;
+  width: 2px; background: var(--rule);
+}
+.layer:last-child .layer-tag::before { bottom: auto; height: 8px; }
+.layer-tag::after {
+  content: "";
+  position: absolute; left: 0; top: 6px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--paper); border: 2px solid var(--accent);
+}
+.layer-tag h3 {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 14px; font-weight: 600; margin: 0 0 3px;
+}
+.layer-tag p { margin: 0; font-size: 12.5px; color: var(--ink-faint); line-height: 1.5; }
+.layer-body p { margin: 0 0 10px; font-size: 14.5px; color: var(--ink-soft); }
+.sigs { display: flex; flex-wrap: wrap; gap: 7px; }
+.sig {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 4px 9px;
+  color: var(--ink);
+}
+.sig.dim { color: var(--ink-faint); }
+.callout {
+  margin-top: 26px;
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 17px 20px;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+}
+.callout strong { color: var(--ink); font-weight: 500; }
+.callout code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; color: var(--accent); }
+
+/* ---------- flow ---------- */
+
+.flows { display: grid; gap: 18px; }
+.flow {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.flow > header {
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sunken);
+}
+.flow h3 {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 16px;
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+.flow header p { margin: 0; font-size: 13.5px; color: var(--ink-soft); }
+.chain { display: flex; flex-wrap: wrap; align-items: stretch; padding: 18px 20px; gap: 0; }
+.step { flex: 1 1 130px; min-width: 130px; padding-right: 22px; position: relative; }
+.step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 8px; top: 12px;
+  width: 7px; height: 7px;
+  border-top: 1.5px solid var(--ink-faint);
+  border-right: 1.5px solid var(--ink-faint);
+  transform: rotate(45deg);
+}
+.step code {
+  display: block;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 3px;
+  word-break: break-word;
+}
+.step span { font-size: 13px; color: var(--ink-soft); line-height: 1.5; display: block; }
+
+/* ---------- rules ---------- */
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+.rule-card {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 17px 19px;
+}
+.rule-card h3 { font-family: Archivo, system-ui, sans-serif; font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+.rule-card p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.rule-card code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--ink); }
+
+/* ---------- di table ---------- */
+
+.di-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--raised); }
+table.di { border-collapse: collapse; width: 100%; min-width: 620px; }
+table.di th, table.di td { text-align: left; padding: 11px 18px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+table.di th {
+  font-family: Archivo, system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: var(--sunken);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 600;
+}
+table.di tr:last-child td { border-bottom: 0; }
+table.di code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--accent); }
+table.di td:last-child { color: var(--ink-soft); font-size: 14px; }
+
+footer {
+  padding: 40px 0 70px;
+  color: var(--ink-faint);
+  font-size: 13px;
+  border-top: 1px solid var(--rule);
+}
+footer code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Android · Kotlin · 8 Gradle modules</p>
+  <h1>Mosaic 接線圖</h1>
+  <p class="standfirst">
+    這張圖回答一件事：<strong>誰認識誰，以及為什麼</strong>。箭頭的方向是相依的方向——
+    箭頭指向的那一個，不知道指過來的那一個存在。整張圖沒有一條回頭的線，
+    而這件事是 <strong>build 時被機器擋著的</strong>，不是靠人記得。
+  </p>
+  <dl class="facts">
+    <div class="fact"><dt>模組</dt><dd>8</dd></div>
+    <div class="fact"><dt>相依邊</dt><dd>14</dd></div>
+    <div class="fact"><dt>循環相依</dt><dd>0</dd></div>
+    <div class="fact"><dt>domain 的 Android import</dt><dd>0</dd></div>
+    <div class="fact"><dt>測試</dt><dd>126</dd></div>
+  </dl>
+</header>
+
+<section>
+  <h2>模組相依</h2>
+  <p class="lede">點任何一個模組，看它吃什麼、誰吃它。沒選的時候線是淡的——十四條邊一起看只會變成毛線球。</p>
+
+  <div class="graph-shell">
+    <div class="graph-frame">
+      <svg class="graph" id="graph" viewBox="0 0 900 560" role="img" aria-label="Mosaic 的模組相依圖">
+        <g id="edges" stroke-linecap="round"></g>
+        <g id="nodes"></g>
+      </svg>
+    </div>
+
+    <aside class="panel" id="panel">
+      <p class="panel-hint">點左邊任何一個方塊。</p>
+    </aside>
+  </div>
+
+  <div class="legend">
+    <div><i style="background: var(--app)"></i>Android 應用程式</div>
+    <div><i style="background: var(--android)"></i>Android 函式庫</div>
+    <div><i style="background: var(--kotlin)"></i>純 Kotlin（沒有 Android）</div>
+  </div>
+</section>
+
+<section>
+  <h2>一個畫面切成幾層</h2>
+  <p class="lede">
+    官方只規定兩件事：拿 ViewModel 的那一層要跟排版的那一層分開，而且
+    <a href="https://developer.android.com/develop/ui/compose/state-hoisting" style="color:var(--accent)">ViewModel 不准往下傳</a>——
+    往下傳就沒辦法 preview。名字叫什麼不是官方的事。這裡採 Now in Android 的做法：<strong>同名多載</strong>。
+  </p>
+
+  <div class="layers">
+
+    <div class="layer">
+      <div class="layer-tag">
+        <h3>外框</h3>
+        <p>住在 <code>:navigation</code>，不在 feature 裡</p>
+      </div>
+      <div class="layer-body">
+        <p>Scaffold、TopAppBar、底部導覽。三個畫面共用同一份，所以外觀必然一致，標題與返回鍵由路由決定——路由本來就知道自己是誰。</p>
+        <div class="sigs"><span class="sig">Screen(title, onBack, bar) { padding -&gt; ... }</span></div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-tag">
+        <h3>有狀態</h3>
+        <p>拿 ViewModel、collect、綁定</p>
+      </div>
+      <div class="layer-body">
+        <p>唯一碰得到 ViewModel 的地方。它不排版——只把流收下來、把方法接成 lambda，然後交給下一層。</p>
+        <div class="sigs">
+          <span class="sig">FeedScreen(viewModel = hiltViewModel())</span>
+          <span class="sig">DetailScreen(viewModel = hiltViewModel())</span>
+          <span class="sig">SavedScreen(viewModel = hiltViewModel())</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-tag">
+        <h3>無狀態</h3>
+        <p>同名多載．狀態往下分派</p>
+      </div>
+      <div class="layer-body">
+        <p>跟上一層<strong>同一個名字</strong>——「這兩個是同一個畫面的兩種形態」因此是編譯器層級的事實，而不是兩個碰巧相鄰的名字。它收 state 與 lambda，決定現在該畫哪一種，不知道 ViewModel 存在。</p>
+        <div class="sigs">
+          <span class="sig">FeedScreen(stories, weather, onRefresh, onOpenArticle)</span>
+          <span class="sig">DetailScreen(state, onRetry, onBack, onKeep, onLetGo)</span>
+          <span class="sig">SavedScreen(state, onOpenArticle, onLetGo)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-tag">
+        <h3>狀態葉節點</h3>
+        <p>照「它是什麼」命名．preview 打在這裡</p>
+      </div>
+      <div class="layer-body">
+        <p>每一種畫面各自一個具名 composable。這一層存在的理由是 preview——<strong>一張圖剛好一個狀態</strong>，而且比 preview 整頁便宜也穩定。錯誤畫面因此不用拔網路線才看得到。</p>
+        <div class="sigs">
+          <span class="sig">LoadingState</span><span class="sig">EmptyState</span><span class="sig">FailedState</span>
+          <span class="sig">ArticleList</span><span class="sig">SavedList</span><span class="sig">Article</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="layer">
+      <div class="layer-tag">
+        <h3>元件</h3>
+        <p>可重複使用的一塊</p>
+      </div>
+      <div class="layer-body">
+        <p>清單裡的一列、一張卡片、一段出處。</p>
+        <div class="sigs">
+          <span class="sig">LeadStory</span><span class="sig">StoryRow</span><span class="sig">WeatherCard</span>
+          <span class="sig">SavedCard</span><span class="sig">Notice</span><span class="sig dim">Attribution</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <strong>層數不是固定的，是照職責長出來的。</strong>
+    Feed 比另外兩個多一層——因為它有下拉更新，<code>PullToRefreshBox</code> 需要一個包裝。
+    Detail 與 Saved 沒有外框可以分，所以它們的無狀態層直接就是排版層。
+    對稱不是目的，<strong>每一層都要能說出自己隔開了什麼</strong>。
+  </div>
+</section>
+
+<section>
+  <h2>一次點擊，從畫面到網路</h2>
+  <p class="lede">三條資料流，每一條都跨過整張圖。注意每一條在哪裡轉了形狀——伺服器的形狀、App 的形狀、畫面的形狀是三種不同的東西。</p>
+
+  <div class="flows">
+
+    <div class="flow">
+      <header>
+        <h3>看清單</h3>
+        <p>捲到底自動載下一頁。分頁的狀態機交給 Paging 3，這裡沒有一個手寫的 <code>isLoading</code>。</p>
+      </header>
+      <div class="chain">
+        <div class="step"><code>FeedScreen</code><span>畫面。收到什麼畫什麼，不知道 ViewModel 存在</span></div>
+        <div class="step"><code>FeedViewModel</code><span>把 domain 物件翻成畫面上的字</span></div>
+        <div class="step"><code>ArticlePagingSource</code><span>一個世代的清單，順手擋掉重複的文章</span></div>
+        <div class="step"><code>ArticleRepository</code><span>問一頁，回答「拿到了」或「為什麼沒拿到」</span></div>
+        <div class="step"><code>SpaceflightNewsApi</code><span>唯一知道網址長什麼樣的地方</span></div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <header>
+        <h3>開一篇文章</h3>
+        <p>存過的那篇不再問網路——先問手機裡那一列，沒有才出門。</p>
+      </header>
+      <div class="chain">
+        <div class="step"><code>DetailScreen</code><span>載入中／讀得到／失敗，三種畫面</span></div>
+        <div class="step"><code>DetailViewModel</code><span>只問一次，不決定去哪裡問</span></div>
+        <div class="step"><code>SavedFirstArticleRepository</code><span>兩個來源的仲裁在這裡，不在畫面</span></div>
+        <div class="step"><code>SavedArticleDao</code><span>先問它：<code>WHERE id = ?</code></span></div>
+        <div class="step"><code>SpaceflightNewsApi</code><span>本地沒有，才走網路</span></div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <header>
+        <h3>天氣卡</h3>
+        <p>唯一一條「沒人問也會自己動」的流。它按來源自己的節奏更新，不是我們發明的分鐘數。</p>
+      </header>
+      <div class="chain">
+        <div class="step"><code>WeatherRepository</code><span>一條 <code>StateFlow&lt;Weather?&gt;</code>，<code>null</code> 就是不畫卡片</span></div>
+        <div class="step"><code>OpenMeteoWeather</code><span>算下一次該問的時刻，沒人看時完全不問</span></div>
+        <div class="step"><code>OpenMeteoApi</code><span>組請求</span></div>
+        <div class="step"><code>WeatherStore</code><span>寫進檔案，冷啟動時卡片先在</span></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>誰把東西交給誰</h2>
+  <p class="lede">整個 App 的物件組裝只有一個地方：<code>DataModule</code>。六個 <code>@Provides</code>，全部 <code>@Singleton</code>，全部 <code>internal</code>——上面的模組拿得到介面，拿不到實作。</p>
+  <div class="di-scroll">
+    <table class="di">
+      <thead>
+        <tr><th>做出什麼</th><th>要先有什麼</th><th>白話</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>HttpClient</code></td><td>—</td><td>一個設定好逾時與 JSON 的 Ktor 客戶端</td></tr>
+        <tr><td><code>SpaceflightNewsApi</code></td><td><code>HttpClient</code></td><td>唯一知道文章 API 網址與參數的類別</td></tr>
+        <tr><td><code>SavedArticlesDatabase</code></td><td>App context</td><td>Room 資料庫本體</td></tr>
+        <tr><td><code>SavedArticleDao</code></td><td>資料庫</td><td>對那張表的查詢。<strong>有兩個消費者</strong></td></tr>
+        <tr><td><code>ArticleRepository</code></td><td>Api ＋ Dao</td><td>文章從哪來的仲裁：存過的先給存過的</td></tr>
+        <tr><td><code>WeatherRepository</code></td><td>App context</td><td>天氣的串流，自己決定何時再問</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>圖上看不到、但機器擋著的四條</h2>
+  <p class="lede">架構如果只寫在文件裡，它就只是一個說法。這四條每一條都會讓 <code>./gradlew build</code> 變紅。</p>
+  <div class="rules">
+    <div class="rule-card">
+      <h3>沒有畫面看得到資料層</h3>
+      <p><code>checkModuleDependencies</code> 讀 Gradle 真實的邊。<code>:feature:*</code> 宣告 <code>:core:data</code> 就會失敗。</p>
+    </div>
+    <div class="rule-card">
+      <h3><code>:app</code> 碰不到任何 feature</h3>
+      <p>它只認識 <code>:navigation</code>。而 <code>:navigation</code> 用 <code>implementation</code> 而非 <code>api</code>，所以型別也傳不過去。</p>
+    </div>
+    <div class="rule-card">
+      <h3><code>:core:domain</code> 是純 Kotlin</h3>
+      <p>不是靠自律，是編譯器——那個模組沒有 Android SDK，寫了 <code>import android.*</code> 編不過。</p>
+    </div>
+    <div class="rule-card">
+      <h3>README 的圖不會過期</h3>
+      <p>模組圖由 <code>createModuleGraph</code> 產生，CI 會比對。圖跟程式碼不一致時 CI 紅。</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="padding:0">
+    數字取自 <code>main</code> 分支實際狀態，非估計：模組邊由 Gradle 宣告讀出，行數為
+    <code>src/main</code> 的 Kotlin 行數。
+  </div>
+</footer>
+
+</div>
+
+<script>
+const NODES = [
+  { id:"app", name:":app", kind:"app", label:"Android 應用程式", cx:450, cy:52, loc:"43 行",
+    job:"Android 的進入點，以及 Hilt 的組裝根。它不做任何畫面決定——連「哪個畫面通往哪個」都搬走了。",
+    holds:[["MainActivity","開視窗、套主題、呼叫一個 composable"],["MosaicApp","@HiltAndroidApp"]] },
+
+  { id:"navigation", name:":navigation", kind:"android", label:"Android 函式庫", cx:288, cy:172, loc:"304 行",
+    job:"唯一知道「誰通往誰」的模組。三把 NavKey、整張導覽圖、上下兩條 bar 都在這裡。畫面之間的關係在這一層組裝，feature 自己不知道。",
+    holds:[["NavKeys","三個目的地的型別安全鑰匙"],["Mosaic()","NavDisplay 與整張 entryProvider"],["Screen()","TopAppBar 與底部導覽的外框"],["BackStack","goTo / goToDestination"]] },
+
+  { id:"coredata", name:":core:data", kind:"android", label:"Android 函式庫", cx:700, cy:172, loc:"1450 行",
+    job:"所有跟外面世界打交道的事：網路、資料庫、檔案。它實作 domain 定義的介面，而它的實作類別全部是 internal——上面的模組看得到介面，看不到實作。",
+    holds:[["SpaceflightNewsApi","文章 API"],["OpenMeteoApi + WeatherStore","天氣，一遠一近"],["SavedArticlesDatabase","Room 的表與 DAO"],["DataModule","六個 @Provides，整個 App 的組裝"]] },
+
+  { id:"feed", name:":feature:feed", kind:"android", label:"Android 函式庫", cx:132, cy:292, loc:"985 行",
+    job:"文章清單這個畫面。分頁交給 Paging 3，天氣卡跟文章是兩條互不相干的流。它只收 callback，不知道點下去會去哪裡。",
+    holds:[["FeedScreen","有狀態與無狀態兩個多載"],["FeedViewModel","兩條流：stories 與 weather"],["ArticlePagingSource","一個世代的清單與去重"],["feedPhase()","從 Paging 的狀態推導出畫哪一種畫面"]] },
+
+  { id:"detail", name:":feature:detail", kind:"android", label:"Android 函式庫", cx:330, cy:292, loc:"569 行",
+    job:"一篇文章的畫面，加上存起來與取消存的按鈕。它只問 repository 一次，不決定文章要從哪裡拿。",
+    holds:[["DetailScreen","載入／內容／失敗三種"],["DetailViewModel","open、keep、letGo"],["ArticleView","給畫面看的字"]] },
+
+  { id:"saved", name:":feature:saved", kind:"android", label:"Android 函式庫", cx:528, cy:292, loc:"356 行",
+    job:"存起來的清單。整個 App 唯一一個真正 local-first 的地方——它只讀資料庫，永遠不打網路。",
+    holds:[["SavedScreen","清單或空狀態"],["SavedViewModel","一條可觀察的查詢"]] },
+
+  { id:"coreui", name:":core:ui", kind:"android", label:"Android 函式庫", cx:216, cy:412, loc:"194 行",
+    job:"跨畫面共用的東西。目前只有兩件：主題色票，和「兩個畫面必須對同一個時間格式有共識」的那個格式器。",
+    holds:[["MosaicTheme","深淺兩套色票"],["ReadableTime","時間怎麼讀給人看"]] },
+
+  { id:"coredomain", name:":core:domain", kind:"kotlin", label:"純 Kotlin", cx:450, cy:502, loc:"300 行",
+    job:"這個 App 認為世界長什麼樣。三個介面、幾個資料型別，沒有一行 Android。所有箭頭最後都指到這裡，而它不指向任何人。",
+    holds:[["ArticleRepository","suspend 問答：要一頁、要一篇"],["SavedArticles","Flow：清單會自己變"],["WeatherRepository","StateFlow：天氣自己會動"],["ArticleItem / Weather","資料本身"]] },
+];
+
+const EDGES = [
+  ["app","navigation"], ["app","coredata"], ["app","coreui"], ["app","coredomain"],
+  ["navigation","feed"], ["navigation","detail"], ["navigation","saved"], ["navigation","coredomain"],
+  ["feed","coreui"], ["feed","coredomain"],
+  ["detail","coreui"], ["detail","coredomain"],
+  ["saved","coredomain"],
+  ["coredata","coredomain"],
+];
+
+const W = 168, H = 56;
+const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+const svg = document.getElementById("graph");
+const gEdges = document.getElementById("edges");
+const gNodes = document.getElementById("nodes");
+const panel = document.getElementById("panel");
+const NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// Edges leave the bottom of the source and arrive at the top of the target.
+// A quadratic control point pulled toward the midpoint keeps long spans from
+// cutting across the boxes between them.
+EDGES.forEach(([from, to]) => {
+  const a = byId[from], b = byId[to];
+  const x1 = a.cx, y1 = a.cy + H / 2;
+  const x2 = b.cx, y2 = b.cy - H / 2;
+  const spread = Math.abs(x2 - x1);
+  const cx = (x1 + x2) / 2 + (spread > 220 ? (x2 > x1 ? 60 : -60) : 0);
+  const cy = (y1 + y2) / 2;
+  const p = el("path", {
+    d: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`,
+    class: "edge",
+    "data-from": from,
+    "data-to": to,
+  });
+  gEdges.appendChild(p);
+});
+
+NODES.forEach(n => {
+  const g = el("g", {
+    class: "node", "data-id": n.id, "data-kind": n.kind,
+    tabindex: "0", role: "button",
+    "aria-label": `${n.name}，${n.label}`,
+  });
+  g.appendChild(el("rect", { x: n.cx - W / 2, y: n.cy - H / 2, width: W, height: H, rx: 9 }));
+  g.appendChild(el("rect", { class: "swatch", x: n.cx - W / 2, y: n.cy - H / 2, width: 4, height: H, rx: 2 }));
+  g.appendChild(el("text", { class: "name", x: n.cx - W / 2 + 15, y: n.cy - 4 }, n.name));
+  g.appendChild(el("text", { class: "loc", x: n.cx - W / 2 + 15, y: n.cy + 14 }, n.loc));
+  gNodes.appendChild(g);
+});
+
+function eats(id)   { return EDGES.filter(e => e[0] === id).map(e => e[1]); }
+function eatenBy(id){ return EDGES.filter(e => e[1] === id).map(e => e[0]); }
+
+function list(ids, empty) {
+  if (!ids.length) return `<p class="none">${empty}</p>`;
+  return "<ul>" + ids.map(i => {
+    const n = byId[i];
+    const why = n.job.split("。")[0] + "。";
+    return `<li><code>${n.name}</code><span>${why}</span></li>`;
+  }).join("") + "</ul>";
+}
+
+function select(id) {
+  const n = byId[id];
+  const out = eats(id), inc = eatenBy(id);
+
+  svg.classList.add("has-selection");
+  gNodes.querySelectorAll(".node").forEach(g => {
+    const gid = g.dataset.id;
+    const lit = gid === id || out.includes(gid) || inc.includes(gid);
+    g.classList.toggle("lit", lit);
+    g.dataset.role = gid === id ? "source" : "";
+  });
+  gEdges.querySelectorAll(".edge").forEach(p => {
+    p.classList.toggle("lit", p.dataset.from === id || p.dataset.to === id);
+  });
+
+  panel.innerHTML = `
+    <h3>${n.name}</h3>
+    <p class="role">${n.label} · ${n.loc}</p>
+    <p class="job">${n.job}</p>
+    <h4>它吃什麼</h4>
+    ${list(out, "什麼都不吃。所有箭頭的終點。")}
+    <h4>誰吃它</h4>
+    ${list(inc, "沒有人。它是最上面那一個。")}
+    <h4>裡面有什麼</h4>
+    <ul>${n.holds.map(([k, v]) => `<li><code>${k}</code><span>${v}</span></li>`).join("")}</ul>
+    <button class="clear-btn" type="button" id="clear">清除選取</button>
+  `;
+  document.getElementById("clear").addEventListener("click", clear);
+}
+
+function clear() {
+  svg.classList.remove("has-selection");
+  gNodes.querySelectorAll(".node").forEach(g => { g.classList.remove("lit"); g.dataset.role = ""; });
+  gEdges.querySelectorAll(".edge").forEach(p => p.classList.remove("lit"));
+  panel.innerHTML = '<p class="panel-hint">點左邊任何一個方塊。</p>';
+}
+
+gNodes.addEventListener("click", e => {
+  const g = e.target.closest(".node");
+  if (g) select(g.dataset.id);
+});
+gNodes.addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const g = e.target.closest(".node");
+  if (g) { e.preventDefault(); select(g.dataset.id); }
+});
+</script>

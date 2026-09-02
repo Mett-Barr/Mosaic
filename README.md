@@ -85,6 +85,60 @@ class :core:ui android-library
 class :app android-application
 
 ```
+### 一個畫面切成幾層
+
+官方只規定兩件事：**拿 ViewModel 的那層要跟排版的那層分開**，而且
+[ViewModel 不准往下傳](https://developer.android.com/develop/ui/compose/state-hoisting)——
+往下傳就沒辦法 preview。名字叫什麼不是官方的事，這裡採 Now in Android 的**同名多載**。
+
+```mermaid
+graph TB
+  chrome["Screen()<br/>外框：Scaffold、TopAppBar、底部導覽<br/>住在 :navigation"]
+  stateful["FeedScreen(viewModel = hiltViewModel())<br/>有狀態：拿 ViewModel、collect、綁 lambda"]
+  stateless["FeedScreen(stories, weather, onRefresh, onOpenArticle)<br/>無狀態：同名多載，決定畫哪一種"]
+  leaf["LoadingState · EmptyState · FailedState · ArticleList<br/>狀態葉節點：preview 打在這一層"]
+  parts["LeadStory · StoryRow · WeatherCard · Notice<br/>元件"]
+
+  chrome --> stateful --> stateless --> leaf --> parts
+
+classDef nav fill:#2C4162,stroke:#fff,stroke-width:2px,color:#fff;
+classDef ui fill:#3BD482,stroke:#fff,stroke-width:2px,color:#fff;
+class chrome nav
+class stateful,stateless,leaf,parts ui
+```
+
+| 層 | 它隔開了什麼 |
+|---|---|
+| **外框** | 三個畫面共用一份 Scaffold，所以外觀必然一致。它住在 `:navigation`，feature 裡沒有。 |
+| **有狀態** | 唯一碰得到 ViewModel 的地方。它不排版。 |
+| **無狀態** | 跟上一層**同名**——「同一個畫面的兩種形態」因此是編譯器層級的事實，而不是兩個碰巧相鄰的名字。 |
+| **狀態葉節點** | 每種畫面各一個具名 composable。這層存在的理由是 preview：**一張圖剛好一個狀態**，錯誤畫面不用拔網路線才看得到。 |
+
+**層數不是固定的，是照職責長出來的。** Feed 比另外兩個多一層，因為它有下拉更新，
+`PullToRefreshBox` 需要一個包裝；Detail 與 Saved 沒有外框可分，無狀態層直接就是排版層。
+**對稱不是目的，每一層都要能說出自己隔開了什麼。**
+
+### 誰把東西交給誰
+
+整個 App 的物件組裝只有一個地方：`DataModule`。六個 `@Provides`，全部 `@Singleton`，
+全部 `internal`——上面的模組拿得到介面，拿不到實作。
+
+| 做出什麼 | 要先有什麼 | 白話 |
+|---|---|---|
+| `HttpClient` | — | 設定好逾時與 JSON 的 Ktor 客戶端 |
+| `SpaceflightNewsApi` | `HttpClient` | 唯一知道文章 API 網址與參數的類別 |
+| `SavedArticlesDatabase` | app context | Room 資料庫本體 |
+| `SavedArticleDao` | 資料庫 | 對那張表的查詢。**有兩個消費者** |
+| `ArticleRepository` | Api ＋ Dao | 文章從哪來的仲裁：存過的先給存過的 |
+| `WeatherRepository` | app context | 天氣的串流，自己決定何時再問 |
+
+`SavedArticleDao` 有兩個消費者，是「存過的文章優先」發生在**資料層**而不是畫面的證據
+（`DECISIONS.md` 30）。
+
+> **互動版**：[`docs/architecture.html`](docs/architecture.html) 是同一份內容的可點版本——
+> 點任一模組會highlight它的相依邊，並列出它吃什麼、誰吃它。
+> GitHub 不會渲染 repo 裡的 HTML，下載後用瀏覽器開。
+
 ## 任務拆解與順序
 
 ### 怎麼拆
