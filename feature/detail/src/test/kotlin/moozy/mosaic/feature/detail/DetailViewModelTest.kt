@@ -92,7 +92,7 @@ class DetailViewModelTest {
         val gate = CompletableDeferred<ArticleResult>()
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId) = gate.await()
             },
             FakeSaved(),
@@ -119,7 +119,7 @@ class DetailViewModelTest {
         )
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId): ArticleResult {
                     yield()
                     return answers.removeFirst()
@@ -178,7 +178,7 @@ class DetailViewModelTest {
         val slowFirst = CompletableDeferred<ArticleResult>()
         val detail = DetailViewModel(
             object : ArticleRepository {
-                override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+                override suspend fun articles(after: PageCursor?) = notAsked()
                 override suspend fun article(id: ArticleId): ArticleResult =
                     if (id.value == "1") slowFirst.await() else ArticleResult.Loaded(article("2", "Second"))
             },
@@ -270,8 +270,18 @@ class DetailViewModelTest {
         assertEquals(emptyList<ArticleItem>(), kept.articles.value)
     }
 
+    /**
+     * Where an article comes from is the repository's question, not this one's.
+     * A reader who kept this article is served the copy they kept before the
+     * network is asked at all -- and that is asserted one layer down, in
+     * `OneArticleTest`, because it is true there and only there.
+     *
+     * What is left here is the other half of the same decision: an answer this
+     * screen was given is the answer. Going looking for a second opinion is how
+     * the arbitration ended up on the screen in the first place.
+     */
     @Test
-    fun `an article that was kept opens with no network at all`() = runTest {
+    fun `a failure is the answer, even for an article the reader kept`() = runTest {
         val kept = FakeSaved(article())
         val detail = DetailViewModel(
             FakeArticle(ArticleResult.Failed(FeedFailure.Offline())),
@@ -283,9 +293,7 @@ class DetailViewModelTest {
             awaitItem()
 
             val state = awaitItem()
-            assertTrue("the kept copy should have been enough, got $state", state is DetailUiState.Content)
-            assertEquals(article().view(), (state as DetailUiState.Content).article)
-            assertTrue("and it is still marked as kept", state.saved)
+            assertTrue("the screen should not overrule what it was told, got $state", state is DetailUiState.Failed)
         }
     }
 
@@ -333,7 +341,7 @@ class DetailViewModelTest {
         private val queue = ArrayDeque(results.toList())
         val asked = mutableListOf<ArticleId>()
 
-        override suspend fun articles(after: PageCursor?): ArticlesResult = notAsked()
+        override suspend fun articles(after: PageCursor?) = notAsked()
 
         override suspend fun article(id: ArticleId): ArticleResult {
             asked += id

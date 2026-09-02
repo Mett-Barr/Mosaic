@@ -194,8 +194,10 @@ class OpenMeteoStreamTest {
 
     private fun TestScope.weather(engine: MockEngine, store: WeatherStore = InMemoryStore()) =
         OpenMeteoWeather(
-            client = openMeteoClient(engine),
-            place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
+            api = OpenMeteoApi(
+                client = openMeteoClient(engine),
+                place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
+            ),
             clock = Clock { now },
             store = store,
             scope = backgroundScope,

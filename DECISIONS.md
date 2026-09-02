@@ -645,3 +645,269 @@ val state = combine(_state, weather.current) { feed, sky ->
 
 **代價** —— 系統回收程序後切回來會重抓一次。這是刻意接受的。
 
+## 26. 分頁的重複在客戶端擋，遺漏擋不住——而且不假裝擋得住
+
+**選了** —— 保留伺服器的 offset 分頁，在 `ArticlePagingSource` 裡以「這一代已經給過什麼」
+的集合去重。**不做 keyset 游標。**
+
+**先量，再決定**
+
+| 問題 | 實測 |
+|---|---|
+| 單次回應會給重複的 id 嗎 | **不會。**`limit=20` 和 `limit=100` 都是 id 全相異 |
+| 同一個過去的截點，集合會長大嗎 | **會。**`published_at_lte=2026-08-31T00:00:00Z` 一天內 35882 → 35883 |
+| 排序有平手嗎 | **有。**100 篇裡兩個時間戳被多篇共用（一個 2 篇、一個 4 篇） |
+| 平手的順序穩定嗎 | 連抓三次一致，但排序鍵只有 `published_at` 一欄，**沒有保證** |
+| 能不能複合排序 | **不能。**`ordering=-published_at,-id` → `"-id is not one of the available choices"` |
+
+**所以重複不是後端造成的** —— 每一次回應內部都自洽。重複是**我們**把兩次獨立查詢當成
+同一份清單的前後段拼起來造成的，而 `offset=N` 的語意是「跳過**現在**這個查詢的前 N 列」，
+API 從來沒承諾過可拼接。
+
+**為什麼不做 keyset** —— 標準 keyset 有一個硬性前提：**排序鍵必須唯一**，不唯一時
+必須加第二欄位打破平手，否則邊界上時間相同的紀錄會被跳過或重複
+（[Stacksync](https://www.stacksync.com/blog/keyset-cursors-postgres-pagination-fast-accurate-scalable)）。
+SNAPI 拒絕複合排序，這個前提給不起——**做出來的會是一個在它自己的已知失效點上失效的 keyset**。
+
+**業界對「伺服器不可控」的答案就是客戶端去重**
+（[Paging 3 遷移指南](https://developer.android.com/topic/libraries/architecture/paging/v3-migration)
+與相關實務文章的一致做法）。
+
+**去重放哪裡** —— `PagingSource` 的 instance。**一代 = 一個 instance**，所以那個集合的
+壽命剛好等於「這一代已經給過什麼」：不需要清除、不需要旗標、換代時連同 instance 一起消失。
+放在 ViewModel（原本的位置）是錯的，因為 ViewModel 活得比一代久——它現在能work是巧合。
+
+**擋不住的：遺漏** —— 如果是**刪除**而不是插入，邊界往前滑，中間那一篇**沒有人會看到**，
+客戶端偵測不到。這無解，而且**不會被寫成解決了**。
+
+**兩個保證的差別**
+
+| | offset + 去重 | 需要什麼 |
+|---|---|---|
+| 不重複 | ✅ | 客戶端集合 |
+| 不遺漏 | ❌ | 真正的 keyset（本 API 給不起） |
+| 清單凍結在某一刻 | ❌ | 伺服器發的 snapshot token（本 API 沒有） |
+
+**這一則推翻了 `DECISIONS.md` 16** 的說法。那時寫「釘住視窗大幅降低位移」是推理；
+現在有數字，而且知道降低的是哪一種、剩下的是哪一種。
+
+---
+
+## 27. 設計稿的每一個顏色都放進 Material 既有的色票欄位，不另開一組 token
+
+**選了** —— 把參考稿上量到的顏色映射到 `ColorScheme` 現成的欄位（`primaryContainer`、
+`secondaryContainer`、`surfaceContainer`、`tertiaryContainer`……），連同 `Shapes` 與
+`Typography` 一起定義在 `MosaicTheme`。畫面裡沒有任何一個 `Color(0xFF...)`。
+
+**當時還考慮** —— 開一個 `MosaicColors` data class 加 `CompositionLocal`，把漸層的起訖色、
+來源標籤的底色這些 Material 沒有對應語意的顏色收進去。這是擴充 Material 主題的標準做法，
+語意也誠實得多。
+
+**為什麼不** —— 要讀得到那個 `CompositionLocal`，就得 import 得到它，也就是
+`:feature:saved` 必須相依 `:core:ui`；而第 2 則那張 `allowedProjectDependencies` 只允許
+它相依 `:core:domain`。**主題是 Compose 從 composition root 傳下來的，不需要 Gradle 邊；
+一組自己的 token 需要。** 為了顏色去鬆綁架構規則，代價不對。
+
+**取捨** —— 有幾個欄位裝的東西和它的名字不完全相符：天氣卡的漸層是
+`primaryContainer → secondaryContainer`，來源標籤借用 `tertiaryContainer`。
+Material 的語意被挪用了一層，讀 theme 的人得看註解才知道為什麼。換來的是
+**模組圖一條邊都沒有新增**，而且連讀不到 `:core:ui` 的 `:feature:saved` 都拿得到整套配色。
+
+**同一個理由造成的重複** —— 離線／錯誤那張小卡在 `:feature:feed` 和 `:feature:saved`
+各寫了一份。能共用的前提同樣是那條被禁止的邊。十幾行的重複比一條架構例外便宜。
+
+## 28. 分頁交給 Paging 3，狀態不進 UI State
+
+**這一則是使用者主導的**——包括「刷新是命令、建模成事件」和「別讓 Paging 承擔冷啟動快取」
+這兩個把設計拉回正軌的判斷。
+
+**選了** —— `Pager` 建在 ViewModel，清單是它自己的一條 flow：
+
+```kotlin
+val stories: Flow<PagingData<ArticleRow>> = reloads.receiveAsFlow()
+    .onStart { emit(Unit) }
+    .flatMapLatest { newGeneration() }
+    .cachedIn(viewModelScope)
+
+fun refresh() { reloads.trySend(Unit) }
+```
+
+**`PagingData` 不放進 UI state** —— 官方文件寫明「**每個 `PagingData` 實例預設只能使用一次**」，
+而 `data class` 的欄位會被反覆讀取（每次重組、每次 `copy`、每次相等性比較）。它是一個
+**進行中的句柄，不是值**。所以 MVI 的狀態與分頁資料是兩條獨立暴露的東西
+（[Load and display paged data](https://developer.android.com/topic/libraries/architecture/paging/v3-paged-data)）。
+
+**可以推導的東西不另外儲存** —— Loading／Empty／Ready／Failed 全部由
+`feedPhase(loadState, itemCount)` 從 Paging 已經報告的東西算出來。存一份在 state 裡
+就是同一個事實的第二個版本，而兩份會不同步。
+
+**刷新是事件，不是狀態** —— `Channel(CONFLATED)`，不是 `StateFlow<Int>` 計數器。
+計數器唯一的作用是繞開 `StateFlow` 的去重，那本身就是選錯原語的徵兆。
+
+**`onStart` 不是偽裝的事件** —— 它是「開始收集」這個動作的 hook，而那正是想要一個
+世代的兩個理由之一。把種子塞進 channel 語義不同：那是「有一件事排隊等著」，
+沒人收集時它會一直躺在緩衝區。
+
+**`initialLoadSize` 必須明寫** —— 預設是 `pageSize × 3`，而來源只在第一次請求認 `limit`，
+之後把它抄進每一個連結。放著不管，**每一頁都會變成 60 篇**，花的是別人的流量。
+
+**刪掉的** —— `FeedUiState` 整個（五個型別加五個旗標）、`FeedViewModel` 裡的
+`next`／`loading`／`kept`／`beganLoading`／`loaded`／`failed`，以及畫面裡那個
+「捲到接近底部就載入」的效果。**那個無鎖的 `loading` 布林特別值得拿掉**——
+同一個專案裡 `FileSavedArticles` 為了同樣的危險用了 `Mutex`。
+
+**測試從 24 個變成 4 個**，不是覆蓋變少：哪一個畫面在顯示搬到 `FeedPhaseTest`（5 個），
+一個世代會不會重複搬到 `ArticlePagingSourceTest`（6 個）。留在 ViewModel 的是
+Paging 不做的事——什麼時候開始工作、字長什麼樣、下拉真正造成什麼。
+
+**裝置上驗過的兩件**：捲到底會載入下一頁；**下拉更新時清單不會閃空白**——`cachedIn`
+在新世代載入期間保住已有的項目，所以不需要另外拿一個 `refreshing` 布林。
+
+
+## 29. 閱讀清單改成一張表，因為當初不選 Room 的那個理由已經被量掉了
+
+**選了** —— `:core:data` 的 `RoomSavedArticles`：一張 `saved_articles` 表、一個
+`SavedArticleDao` 的可觀察查詢，外加一次性的 `ImportSavedArticles`——把舊的
+`saved-articles.json` 讀進來就把它放掉。**`SavedArticles` 這個介面一個字都沒改**，
+`SavedViewModel`、`DetailViewModel` 與它們兩個 `FakeSaved` 一行都沒動。
+第 12 則寫過「換掉的成本是這個檔案，不是呼叫端」——這個 commit 是驗證那句話的機會，它成立。
+
+**這一則取代第 12 則的結論，但不改寫它。** 12 則拒絕 Room 只給了一個理由，而且講得很精確：
+「Room 的記憶體資料庫需要 Android context，這個專案沒有 Robolectric，所以 DAO 的行為在 JVM 上
+測不到；用 Room 等於加一個沒有測試的持久層」。所以這裡要說的**不是「Room 後來比較好」，
+而是「當初讓它不對的那件事現在不成立了」**——Robolectric 進了 `:core:data` 的 test classpath，
+18 個資料庫層的測試在純 JVM 上跑得起來。12 則原文保留，history 是交付物。
+
+**沒有做的：遠端資料來源。** 官方 offline-first 的形狀是「本機 ＋ 遠端 ＋ 一個決定用哪個的
+repository」，那個形狀存在是為了**調解**：遠端是權威、本機是它的快取，兩邊會不一致。
+這裡三個前提都不成立——SNAPI 沒有帳號、沒有認證、沒有「這個讀者存了什麼」這種端點。
+所以本機不是快取，它就是**紀錄本身**，沒有東西要調解、沒有衝突規則要挑、沒有版本要追。
+`RemoteSavedArticles` 只會有一個誠實的實作（什麼都不回、什麼都不收），
+而 repository 那個 `when` 的另一條分支存在的唯一功能是讓一張架構圖成立。
+
+唯一不算蠢的遠端工作是「線上時把存下來的那份重抓一次」，它同樣不需要：第 23 則已經量過
+同一篇文章 3.5 小時後六個顯示欄位完全相同；而且 `DetailViewModel` 本來就先問
+`articles.article(id)`、失敗才退回存下來的那份——**存下來的那份只在網路答不出來的時候被顯示**，
+那正好是重抓不可能發生的那一刻。
+
+**三件量出來的事（不是推論）**
+
+| 問題 | 實測 |
+|---|---|
+| Room 的 `Flow` 在 Robolectric 下會不會重發 | **會。**但必須用 `setQueryCoroutineContext` 把 `runTest` 的 scheduler 交給 Room——用 Room 自己的 executor 時重發走真的背景執行緒，`runTest` 的虛擬時鐘不會等它 |
+| 那個 dispatcher 可不可以是 `UnconfinedTestDispatcher` | **不行。**Room 會對它呼叫 `limitedParallelism`，那個型別回 `UnsupportedOperationException`。必須是 `StandardTestDispatcher` |
+| 寫入失敗丟什麼 | 關掉資料庫丟的是 `JobCancellationException`——它是 `CancellationException`，依第 21 則必須重丟，**所以「關掉資料庫」根本觸發不到那個分支**。真正的 SQL 失敗丟 `android.database.sqlite.SQLiteException`，不是 `androidx.sqlite` 的那個 |
+
+第三列正是第 18 則那個錯誤的形狀，所以這次的順序是：先寫測試、讀 stack trace、再寫 catch。
+
+**不會再發生的事**（不是承諾，是理由）——寫到一半的檔案（SQLite 的寫入路徑是交易式的，
+`.writing` 加 rename 那套沒了）；一個壞位元組賠掉整份清單（文件要整份能解析，表不用）；
+讀不回來的時間戳（`published_at` 存 epoch 毫秒，而 `Instant.ofEpochMilli` 在 `Long` 上是全函數，
+所以第 18 則那個分支不是「不太可能」，是**到不了**，該刪而不是留著當裝飾）；
+以及建構子裡那次同步讀檔（Room 的 `Flow` 是冷的，沒人收就不碰磁碟）。
+**還有那面手動維護的鏡子**：檔案版有一條「任何成功的寫入都要順便指派 `articles.value`」的規則，
+它成立是因為有人記得。第 24 則記的正是有人忘記的後果。現在那條規則不存在了。
+
+**`saved_at` 是檔案不需要的那一欄** —— JSON 陣列有順序，SQL 的表是集合，而
+`SavedArticles` 的 KDoc 寫著「最近存的在最前面」，所以順序必須變成資料。
+`ORDER BY saved_at DESC, id DESC`：兩次點擊不會落在同一毫秒，但測試迴圈裡的三次會，
+而順序取決於 SQLite 未定義的平手規則的測試，會在別人的機器上壞掉。
+
+**當時還考慮**
+
+- **`@Upsert`**（Room 2.5+，UPDATE-then-INSERT，保留 rowid、不觸發 delete trigger）。
+  這裡沒有 trigger、沒有外鍵、沒有人引用 rowid，所以它什麼都沒買到，而 `INSERT OR REPLACE`
+  才是測試名字在描述的那件事。值得寫下來的是：**第二張表指過來的那天這個選擇就重要了**——
+  `REPLACE` 會沿著外鍵串連刪除。
+- **自動遞增的 `Long` 主鍵。** `ArticleId` 已經是整個 app 的文章身分（第 5 則），
+  每個呼叫端都拿它當 key；合成主鍵等於多一個身分，再加一次翻譯。
+- **`.fallbackToDestructiveMigration()`。** 版本 1 沒有東西可以退回，現在加等於預先授權
+  某次版本升級時安靜刪掉讀者的清單——那正是第 12 則花一段在反對的事。
+- **叫 `MosaicDatabase` 或 `AppDatabase`。** 第 14 則的同一條理由。真到了加第二張表那天，
+  那是 `@Database(entities = [...])` 一行加一次 migration，只有名字讀起來怪；
+  **名字晚點讀起來怪，比名字現在讀起來模糊便宜。**
+- **把舊檔案直接丟掉。** app 沒上架過，整個安裝基數就是開發者自己的測試機，三下就能重建。
+  但這是整個變更裡**唯一會掉資料**的地方，而第 12 則反對的正是這種安靜的損失。
+  何況便宜的那個選項跟不會掉東西的那個選項是同一個：一次 `readText`、一次 `mapNotNull`、
+  一個 `INSERT`、一次 `delete`。成功刪檔、解不開改名成 `.unreadable`——
+  **成功時多一份是雜訊，失敗時那些位元組是唯一的證據。**
+
+**代價**
+
+- 多一個相依，測試變慢（Robolectric 每個 test class 開一次 sandbox）
+- `saved_at` 是檔案不需要的一欄
+- `published_at` 存 epoch 毫秒，比毫秒細的精度會被截掉。repo 裡每一個 fixture 都是秒精度，
+  但「SNAPI 永遠不送更細的」**沒有被驗證過**
+- **磁碟滿與真正的資料庫毀損現在測不到。** 檔案版還能靠占住那個路徑假造第一種，SQLite 沒有
+  對應的縫。寫進 README 的延後表，而不是假裝它被涵蓋了
+- 這個功能大概只用到 Room 的五分之一。**為了「用資料庫」不值得換；為了那個可觀察的查詢
+  與交易式的寫入才值得**
+
+---
+
+## 30. 一篇文章的來源由 repository 決定，而存過的那份就是它
+
+**選了** —— `article(id)` 先問 `saved_articles` 裡的那一列，沒有那一列才去問網路。
+`DetailViewModel` 只呼叫 `articles.article(id)`，`keptCopyOf` 整段刪掉。
+`NetworkArticleRepository` 因此改名 `SavedFirstArticleRepository`——它已經不只有網路一個來源，
+名字再叫 Network 就是在講一件不成立的事。
+
+**為什麼是 repository 而不是 ViewModel** —— 官方資料層文件把這件事明列在 repository 的職責裡：
+
+> "Repository classes are responsible for ... Resolving conflicts between multiple data sources"
+
+同一頁還寫著
+
+> "each repository defines a single source of truth"
+
+（<https://developer.android.com/topic/architecture/data-layer>）
+
+改之前，「一篇文章」沒有單一真相：網路是 `ArticleRepository` 的真相、Room 是 `SavedArticles`
+的真相，而 `DetailViewModel` 夾在中間挑。挑的規則寫在畫面裡，所以第二個要顯示一篇文章的地方
+（深連結、widget、之後的 saved 詳情）都得把同一條規則再抄一次——**抄錯了不會有人發現**，
+因為沒有任何一個測試的主詞是「這條規則」。
+
+**順便修掉的**：舊寫法是 `kept.saved.first().firstOrNull { it.id == id }`——為了看一列而把
+整張表讀進記憶體，再用 Kotlin 掃一遍。這張表本來沒有 `WHERE id = ?` 這個查詢，現在有了
+（`SavedArticleDao.find`）。這本來就是 SQL 該回答的問題。
+
+**行為改了，而且是刻意的** —— 第 29 則寫過「存下來的那份只在網路答不出來的時候被顯示」。
+現在反過來：**存過的那篇根本不再問網路**。SNAPI 的 `/articles/{id}` 回的就是摘要、沒有全文，
+所以重抓買到的只是六個顯示欄位有沒有變，代價是一次請求加一個轉圈——而且付在讀者唯一
+講明「我要它離線也在」的那篇文章上。第 23 則量過同一篇文章 3.5 小時後那六個欄位完全相同。
+
+**代價（誠實的那一半）** —— **存過的文章不再跟著來源更新**。標題改了、摘要修了、圖換了，
+讀者看到的還是他按下儲存那一刻的那份，直到他取消儲存再開一次。這是 offline-first 一定要付的錢；
+差別在於這裡沒有「線上時在背景刷新」那一層把它補回來，而**不做那層是選擇不是遺漏**：
+要做就得有 conflict policy（誰贏、`saved_at` 要不要跟著動、清單順序會不會因此跳動），
+那是為了一組量過沒有變化的欄位付的複雜度。真的需要那天，加的地方在 repository 這一層，
+`DetailViewModel` 不會知道有這回事——這正是把仲裁搬下來換到的東西。
+
+**`articles(after:)` 一個字都沒改** —— feed 沒有變成 offline-first，也不打算（第 25、28 則）。
+所以名字不叫 `OfflineFirstArticleRepository`——那是 Now in Android 的慣例，但它會宣稱一件
+這個類別只做了一半的事。`SavedFirstArticleRepository` 說的剛好是它做的：**存過的那份優先**，
+而 feed 從來沒有存過的那份，所以 feed 那半自然退化成只有網路。名字承認這個分裂，KDoc 講為什麼。
+
+**當時還考慮**
+
+- **只把 `kept.saved.first()` 換成 `find(id)`，仲裁留在 ViewModel。** 少讀一整張表，
+  但單一真相還是沒有，規則還是抄在畫面裡。省下的是這件事最不重要的那一半。
+- **在 `:core:domain` 加一個只有 `find` 的介面讓 repository 依賴。** domain 已經有
+  `SavedArticles`，再加一個等於同一張表開兩個門。`:core:data` 內部直接依賴 DAO 是
+  Now in Android 的做法（`OfflineFirstNewsRepository` 拿的就是 `NewsResourceDao`），
+  而且 module 邊界沒有變寬——DAO 仍然 `internal`，跨出 `:core:data` 的還是只有 domain 的介面。
+- **讓 `article(id)` 回報這一份是從哪裡來的**（`Loaded(article, fromDisk = true)` 之類）。
+  沒有呼叫端要用：`DetailUiState.Content.saved` 問的是「現在還存著嗎」，不是「這份從哪來」，
+  而那兩個問題會在讀者按下取消儲存的那一刻分岔——畫面要的是前者。
+- **保留 ViewModel 那條退路當第二層保險。** 它已經到不了（存過的那篇 repository 就回了），
+  留著是一段測試覆蓋不到的死碼，而且會讓下一個讀 `DetailViewModel` 的人以為仲裁還在這裡。
+- **讀不回來的那一列就讓它炸。** `SavedArticleEntity.toArticle()` 對域模型不接受的值會丟
+  `IllegalArgumentException`，而這個 class 的 KDoc 第一句是「失敗在這裡停止被丟出、變成答案」。
+  所以那一列被當成「這裡沒有」處理、掉回網路——第 29 則的 `readable()` 用同一個理由
+  少算一篇而不是少算一整份清單。
+
+**一個測試往下搬了一層** —— `DetailViewModelTest` 的
+`an article that was kept opens with no network at all` 斷言的行為沒有消失，
+但它不再是畫面的事。同一句話現在由 `OneArticleTest` 斷言，而且更強：不是「網路失敗時
+退回存下來的那份」，是**一個請求都沒有發出去**。`DetailViewModelTest` 原來的位置換成反向的
+那一條——repository 說失敗，畫面就說失敗，即使那篇存過——它守的正是「不要把仲裁搬回來」。

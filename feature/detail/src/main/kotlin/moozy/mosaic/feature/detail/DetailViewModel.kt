@@ -22,6 +22,12 @@ import moozy.mosaic.domain.repository.SavedArticles
  * [open] is called by the screen rather than the id arriving through the
  * constructor, so that opening the same article again -- which is what a
  * recomposition looks like from here -- does not send the same request twice.
+ *
+ * Where the article comes from is not decided here. [articles] is asked once and
+ * answers from the copy the reader kept or from the network, whichever there is
+ * (DECISIONS 30). [kept] is still needed, for a different question: not "which
+ * copy of this article" but "is it kept right now", which is what the button
+ * shows and what changes while the reader is looking at it.
  */
 @HiltViewModel
 class DetailViewModel @Inject constructor(
@@ -47,12 +53,6 @@ class DetailViewModel @Inject constructor(
     fun retry() {
         load(showing ?: return)
     }
-
-    private suspend fun keptCopyOf(id: ArticleId): DetailUiState.Content? =
-        kept.saved.first().firstOrNull { it.id == id }?.let {
-            holding = it
-            DetailUiState.Content(it.view(), saved = true)
-        }
 
     /** Keep this article to read later, network or no network. */
     fun keep() {
@@ -100,11 +100,12 @@ class DetailViewModel @Inject constructor(
                         saved = kept.saved.first().any { it.id == result.article.id },
                     )
                 }
-                // A reader who kept this one asked for it to be here when the
-                // network is not. Falling back to the copy they kept is the whole
-                // point of having kept it; failing anyway would make the button a
-                // decoration.
-                is ArticleResult.Failed -> keptCopyOf(id) ?: DetailUiState.Failed(
+                // Nothing to fall back to from here. A reader who kept this one
+                // was already served the copy they kept -- that happened before
+                // any request was made, one layer down, where the article has a
+                // single source of truth (DECISIONS 30). So a failure that
+                // arrives here is the answer, not the first of two opinions.
+                is ArticleResult.Failed -> DetailUiState.Failed(
                     message = result.reason.headline(),
                     hint = result.reason.hint(),
                     canRetry = result.reason.worthTryingAgain(),

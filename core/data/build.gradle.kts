@@ -34,6 +34,12 @@ android {
     }
 }
 
+// Room writes the schema of every version it compiles to this directory, and the
+// files are checked in. Version 1 has nothing to migrate from, so the first one is
+// unused -- it is the artefact that makes the *first* migration reviewable instead
+// of guessed. Without a location Room only warns, and a warning is not a schema.
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
 kotlin {
     // Pin the compiling JDK rather than only the target bytecode level: the two
     // are different settings, and an unpinned build picks up whatever JDK the IDE

@@ -1,15 +1,7 @@
 package moozy.mosaic.data.weather
 
-import io.ktor.client.HttpClient
 import io.ktor.client.call.NoTransformationFoundException
-import io.ktor.client.call.body
-import io.ktor.client.engine.HttpClientEngine
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
-import io.ktor.client.request.parameter
 import io.ktor.serialization.ContentConvertException
-import io.ktor.serialization.kotlinx.json.json
 import java.io.IOException
 import java.time.Duration
 import kotlin.coroutines.cancellation.CancellationException
@@ -24,23 +16,6 @@ import kotlinx.serialization.SerializationException
 import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.model.Weather
 import moozy.mosaic.domain.repository.WeatherRepository
-
-/** Where the weather is being asked about, and what to call it. */
-internal data class Place(
-    val name: String,
-    val latitude: Double,
-    val longitude: Double,
-)
-
-internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(engine) {
-    expectSuccess = true
-    install(ContentNegotiation) { json(OpenMeteoJson) }
-    install(HttpTimeout) {
-        requestTimeoutMillis = REQUEST_TIMEOUT_MILLIS
-        connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS
-        socketTimeoutMillis = SOCKET_TIMEOUT_MILLIS
-    }
-}
 
 /**
  * The current weather for one place, as a stream that keeps itself current.
@@ -59,10 +34,13 @@ internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(
  * The value is a [Weather] or nothing. A failure is not a state this app shows:
  * the reader came for the articles, and a card that cannot be filled is better
  * absent than apologising. So a failed request leaves whatever was there.
+ *
+ * Two sources sit behind it and neither is reachable from outside: [api] for
+ * what the weather is, [store] for what it last was. Nothing here builds a
+ * request or knows an address.
  */
 internal class OpenMeteoWeather(
-    private val client: HttpClient,
-    private val place: Place,
+    private val api: OpenMeteoApi,
     private val clock: Clock,
     private val store: WeatherStore,
     scope: CoroutineScope,
@@ -111,19 +89,19 @@ internal class OpenMeteoWeather(
         return wait.coerceAtLeast(AFTER_A_FAILURE_MILLIS)
     }
 
+    /**
+     * One attempt, and what it cost if it failed.
+     *
+     * The catches stay here rather than moving down with the request, because
+     * turning a failure into "no card, try again in a minute" is this class's
+     * decision and not something the source could make on its behalf.
+     */
     @Suppress("TooGenericExceptionCaught", "RethrowCaughtException")
     private suspend fun fetch(): StoredReading? =
         try {
-            val forecast: ForecastDto = client.get(FORECAST_URL) {
-                parameter("latitude", place.latitude)
-                parameter("longitude", place.longitude)
-                parameter("current", "temperature_2m,weather_code")
-                parameter("daily", "temperature_2m_max,temperature_2m_min")
-                parameter("timezone", "auto")
-                parameter("forecast_days", 1)
-            }.body()
+            val weather = api.forecast()
             lastProblem = null
-            StoredReading(forecast.toWeather(place.name), clock.now())
+            StoredReading(weather, clock.now())
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (unreadable: ContentConvertException) {
@@ -142,15 +120,7 @@ internal class OpenMeteoWeather(
         lastProblem = "$what: ${cause.message}"
         return null
     }
-
-    private companion object {
-        const val FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-    }
 }
-
-private const val REQUEST_TIMEOUT_MILLIS = 15_000L
-private const val CONNECT_TIMEOUT_MILLIS = 10_000L
-private const val SOCKET_TIMEOUT_MILLIS = 15_000L
 
 /** Long enough to survive a rotation, short enough not to outlive the screen. */
 private const val WATCHING_GRACE = 5_000L
