@@ -17,8 +17,18 @@ import moozy.mosaic.domain.model.ArticleItem
  * again -- which is one of exactly two things, an app starting or a reader
  * pulling (`DECISIONS.md` 25) -- empties it and starts over. So what is held is
  * what the current generation of the list is holding, and an article can only be
- * opened from a card that generation drew. It cannot answer for an article that
- * is no longer on screen, and it cannot be staler than the screen is.
+ * opened from a card that generation drew. It cannot be staler than the screen
+ * is, because the screen and this were filled by the same pages.
+ *
+ * **The bound is that generation and not the viewport, and the difference
+ * matters.** Nothing is evicted as the reader scrolls: a page Paging has since
+ * dropped from memory is still in here, and so is every page since the last
+ * refresh. So this can answer for an article that has scrolled off the screen,
+ * and it grows with how far the reader scrolled rather than with how much of
+ * the list is visible. `DECISIONS.md` 41 chose that on purpose and gave the
+ * reason -- a capacity number would be a picked number, and the list is already
+ * a bound -- but the sentences here used to claim the tighter one, which the
+ * code has never had.
  *
  * That is deliberately not a fourth freshness policy. The README argues that the
  * three this app has are the source's own rather than numbers somebody picked; a
@@ -29,19 +39,21 @@ import moozy.mosaic.domain.model.ArticleItem
  * nothing in here, which is exactly the case the loading state exists for, and
  * `DECISIONS.md` 25 already ruled that a cold start is worth a fresh request.
  *
- * It holds the same [ArticleItem] objects Paging is holding for the same list, so
- * what it costs over that is one map entry per article on screen.
+ * It holds the same [ArticleItem] objects the feed was handed, so what it costs
+ * over those is one map entry per article loaded since the last refresh -- a
+ * reference and a key, not a second copy of the article.
  */
 internal class ArticlesTheFeedShowed {
 
-    private val shown = LinkedHashMap<ArticleId, ArticleItem>()
+    private val shown = mutableMapOf<ArticleId, ArticleItem>()
 
     /**
      * Remember a page the feed was just handed.
      *
      * [fromTheTop] is the refresh: the list is starting again, so this starts
-     * again with it. Insertion order is kept so that what is dropped and what is
-     * held stay the same thing the list dropped and held.
+     * again with it. That is the only thing that ever removes anything -- there
+     * is no eviction as the reader scrolls, because there is nothing here to
+     * evict against (see above).
      */
     @Synchronized
     fun handedOut(articles: List<ArticleItem>, fromTheTop: Boolean) {
