@@ -1,10 +1,14 @@
 package moozy.mosaic.feature.feed
 
 import androidx.compose.runtime.Immutable
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 import moozy.mosaic.core.ui.readableTime
+import moozy.mosaic.core.ui.readableWeekday
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 
@@ -39,6 +43,28 @@ data class WeatherHeadline(
     val place: String,
     val temperature: String,
     val conditions: String,
+    /**
+     * The days the card draws a strip from, today first.
+     *
+     * Empty when the reading carries no forecast, which is a card without a
+     * strip rather than no card: the three lines above this one are made of
+     * today and do not need it.
+     */
+    val days: ImmutableList<DayHeadline>,
+)
+
+/** One column of the strip: which day, and how warm it is expected to get. */
+@Immutable
+data class DayHeadline(
+    /** The reader's own weekday name, in the language the rest of the card is in. */
+    val day: String,
+    /**
+     * The day's high, and only the high. Two numbers in a column this narrow
+     * would be a table, and the strip is here to say which way the week is
+     * going rather than to be read off precisely.
+     */
+    val temperature: String,
+    val sky: Sky,
 )
 
 internal fun ArticleItem.row() = ArticleRow(
@@ -53,6 +79,13 @@ internal fun Weather.headline() = WeatherHeadline(
     place = place,
     temperature = "$temperature°",
     conditions = "${sky.readable()} · $high° / $low°",
+    days = days.map { it.headline() }.toImmutableList(),
+)
+
+private fun ForecastDay.headline() = DayHeadline(
+    day = readableWeekday(date),
+    temperature = "$high°",
+    sky = sky,
 )
 
 /**

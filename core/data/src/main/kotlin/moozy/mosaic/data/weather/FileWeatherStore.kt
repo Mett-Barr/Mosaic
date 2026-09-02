@@ -5,12 +5,14 @@ import java.io.IOException
 import java.time.DateTimeException
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 
@@ -97,6 +99,13 @@ internal class FileWeatherStore(
     }
 }
 
+/**
+ * The shape on disk, which is deliberately not the domain's.
+ *
+ * [days] defaults to nothing because every file written before the card had a
+ * strip has no such key, and a launch that threw away a perfectly good reading
+ * over a field nobody could have written would cost a request to say nothing.
+ */
 @Serializable
 private data class StoredWeather(
     val place: String,
@@ -107,6 +116,16 @@ private data class StoredWeather(
     @SerialName("measured_at") val measuredAt: String,
     @SerialName("steps_every_seconds") val stepsEverySeconds: Long,
     @SerialName("fetched_at") val fetchedAt: String,
+    val days: List<StoredDay> = emptyList(),
+)
+
+/** A day of the forecast as text, for the same reason the instants are text. */
+@Serializable
+private data class StoredDay(
+    val date: String,
+    val high: Int,
+    val low: Int,
+    val sky: String,
 )
 
 private fun StoredReading.stored() = StoredWeather(
@@ -118,6 +137,14 @@ private fun StoredReading.stored() = StoredWeather(
     measuredAt = weather.measuredAt.toString(),
     stepsEverySeconds = weather.stepsEvery.seconds,
     fetchedAt = fetchedAt.toString(),
+    days = weather.days.map { it.stored() },
+)
+
+private fun ForecastDay.stored() = StoredDay(
+    date = date.toString(),
+    high = high,
+    low = low,
+    sky = sky.name,
 )
 
 private fun StoredWeather.toStored() = StoredReading(
@@ -129,6 +156,14 @@ private fun StoredWeather.toStored() = StoredReading(
         sky = Sky.valueOf(sky),
         measuredAt = Instant.parse(measuredAt),
         stepsEvery = Duration.ofSeconds(stepsEverySeconds),
+        days = days.map { it.toDay() },
     ),
     fetchedAt = Instant.parse(fetchedAt),
+)
+
+private fun StoredDay.toDay() = ForecastDay(
+    date = LocalDate.parse(date),
+    high = high,
+    low = low,
+    sky = Sky.valueOf(sky),
 )

@@ -1,12 +1,14 @@
 package moozy.mosaic.data.weather
 
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import kotlin.math.roundToInt
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 
@@ -38,10 +40,19 @@ internal data class CurrentDto(
     @SerialName("weather_code") val weatherCode: Int,
 )
 
+/**
+ * The dates and the codes are the two fields in this file that may be absent,
+ * and they default to nothing rather than being required. The strip is something
+ * added to the card, not a precondition for it: a response carrying only the
+ * temperatures -- which is the shape this app asked for until it had a strip --
+ * still describes today, and today is what the card is mostly made of.
+ */
 @Serializable
 internal data class DailyDto(
     @SerialName("temperature_2m_max") val high: List<Double>,
     @SerialName("temperature_2m_min") val low: List<Double>,
+    val time: List<String> = emptyList(),
+    @SerialName("weather_code") val weatherCode: List<Int> = emptyList(),
 )
 
 /**
@@ -62,7 +73,26 @@ internal fun ForecastDto.toWeather(place: String): Weather = Weather(
     // How often the source produces a new one, as the source reports it.
     // This is what makes the freshness policy a fact rather than a guess.
     stepsEvery = Duration.ofSeconds(current.interval.toLong()),
+    days = daily.days(),
 )
+
+/**
+ * The daily block arrives as four lists that line up by index -- the source's
+ * shape, not one a screen can be handed.
+ *
+ * Zipped to the shortest of the four rather than to the first: a response that
+ * names three dates and two highs describes two days and claims three, and half
+ * a day is not a day worth drawing a column for.
+ */
+private fun DailyDto.days(): List<ForecastDay> =
+    (0 until minOf(time.size, high.size, low.size, weatherCode.size)).map { day ->
+        ForecastDay(
+            date = LocalDate.parse(time[day]),
+            high = high[day].roundToInt(),
+            low = low[day].roundToInt(),
+            sky = weatherCode[day].toSky(),
+        )
+    }
 
 /**
  * The WMO's table, collapsed into the distinctions a reader acts on. Drizzle and

@@ -50,6 +50,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.core.ui.sharedArticleCard
@@ -57,6 +58,7 @@ import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.Sky
 
 /**
  * The feed, holding on to a view model.
@@ -451,6 +453,13 @@ private val PreviewWeather = WeatherHeadline(
     place = "Taipei",
     temperature = "28°",
     conditions = "Cloudy · 31° / 24°",
+    // The card's own previews live beside it; this one is here so the list
+    // preview shows the weather cell at the height it actually has.
+    days = persistentListOf(
+        DayHeadline(day = "Tue", temperature = "32°", sky = Sky.CLOUDY),
+        DayHeadline(day = "Wed", temperature = "29°", sky = Sky.RAIN),
+        DayHeadline(day = "Thu", temperature = "33°", sky = Sky.CLEAR),
+    ),
 )
 
 /**
