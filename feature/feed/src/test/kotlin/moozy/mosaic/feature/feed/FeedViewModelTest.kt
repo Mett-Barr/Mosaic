@@ -20,13 +20,17 @@ import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.ForecastDay
+import moozy.mosaic.domain.model.Movie
+import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.MovieRepository
 import moozy.mosaic.domain.repository.WeatherRepository
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -63,7 +67,7 @@ class FeedViewModelTest {
     fun `nothing is asked for until somebody is watching`() = runTest {
         val articles = CountingArticles(page(1))
 
-        FeedViewModel(articles, FakeWeather())
+        FeedViewModel(articles, FakeWeather(), FakeMovies())
         runCurrent()
 
         // Constructing a view model is not a reason to spend somebody's data,
@@ -73,7 +77,7 @@ class FeedViewModelTest {
 
     @Test
     fun `an article reaches the screen as words, not as a domain object`() = runTest {
-        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather())
+        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(), FakeMovies())
 
         val shown = feed.stories.asSnapshot().single()
 
@@ -87,7 +91,7 @@ class FeedViewModelTest {
     @Test
     fun `the weather reaches the screen as words too`() = runTest {
         val weather = FakeWeather(reading())
-        val feed = FeedViewModel(CountingArticles(page(1)), weather)
+        val feed = FeedViewModel(CountingArticles(page(1)), weather, FakeMovies())
 
         val watching = launch { feed.weather.collect {} }
         runCurrent()
@@ -102,7 +106,7 @@ class FeedViewModelTest {
     @Test
     fun `the three days ahead reach the screen as a weekday and a temperature`() = runTest {
         val weather = FakeWeather(reading().copy(days = threeDays()))
-        val feed = FeedViewModel(CountingArticles(page(1)), weather)
+        val feed = FeedViewModel(CountingArticles(page(1)), weather, FakeMovies())
 
         val watching = launch { feed.weather.collect {} }
         runCurrent()
@@ -120,7 +124,7 @@ class FeedViewModelTest {
 
     @Test
     fun `a reading with no days ahead is a card with no strip under it`() = runTest {
-        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(reading()))
+        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(reading()), FakeMovies())
 
         val watching = launch { feed.weather.collect {} }
         runCurrent()
@@ -132,9 +136,60 @@ class FeedViewModelTest {
     }
 
     @Test
+    fun `a film reaches the screen as words too`() = runTest {
+        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(), FakeMovies(film()))
+
+        val watching = launch { feed.movies.collect {} }
+        runCurrent()
+        val shown = feed.movies.value.single()
+        watching.cancel()
+
+        assertEquals("How to Train Your Dragon", shown.title)
+        // One decimal, because that is how the source's own site says it and
+        // because "8.117 out of ten" is a claim about a film nobody is making.
+        // The rounding happens here rather than in the mapper: what a number
+        // looks like is a decision about this screen.
+        assertEquals("8.1", shown.rating)
+        assertEquals("https://image.tmdb.org/t/p/w342/poster.jpg", shown.posterUrl)
+    }
+
+    @Test
+    fun `a film nobody has voted on reaches the screen with no score at all`() = runTest {
+        val feed = FeedViewModel(
+            CountingArticles(page(1)),
+            FakeWeather(),
+            FakeMovies(film().copy(rating = null)),
+        )
+
+        val watching = launch { feed.movies.collect {} }
+        runCurrent()
+        val shown = feed.movies.value.single()
+        watching.cancel()
+
+        // Not "0.0", and not "-": a badge nobody can fill is a badge that is
+        // not drawn, the same way a card nobody can fill is not drawn.
+        assertNull(shown.rating)
+    }
+
+    @Test
+    fun `no films is no strip rather than an empty one`() = runTest {
+        val feed = FeedViewModel(CountingArticles(page(1)), FakeWeather(), FakeMovies())
+
+        val watching = launch { feed.movies.collect {} }
+        runCurrent()
+        val shown = feed.movies.value
+        watching.cancel()
+
+        // The same answer the weather gives when there is no reading: absent.
+        // A token nobody configured lands here too, which is why the screen has
+        // one case to draw rather than two.
+        assertEquals(emptyList<MoviePoster>(), shown)
+    }
+
+    @Test
     fun `pulling asks the source again`() = runTest {
         val articles = CountingArticles(page(1), page(2))
-        val feed = FeedViewModel(articles, FakeWeather())
+        val feed = FeedViewModel(articles, FakeWeather(), FakeMovies())
         feed.stories.asSnapshot()
 
         feed.refresh()
@@ -167,6 +222,13 @@ class FeedViewModelTest {
         ForecastDay(LocalDate.parse("2026-09-03"), high = 33, low = 26, sky = Sky.CLEAR),
     )
 
+    private fun film() = Movie(
+        id = MovieId(1087192),
+        title = "How to Train Your Dragon",
+        rating = 8.117,
+        posterUrl = "https://image.tmdb.org/t/p/w342/poster.jpg",
+    )
+
     private fun reading() = Weather(
         place = "Taipei",
         temperature = 26,
@@ -193,5 +255,9 @@ class FeedViewModelTest {
 
     private class FakeWeather(reading: Weather? = null) : WeatherRepository {
         override val current: StateFlow<Weather?> = MutableStateFlow(reading)
+    }
+
+    private class FakeMovies(vararg films: Movie) : MovieRepository {
+        override val trending: StateFlow<List<Movie>> = MutableStateFlow(films.toList())
     }
 }
