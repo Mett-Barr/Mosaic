@@ -174,30 +174,6 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
 }
 
 /**
- * Something drawn beside the article rather than inside it, arriving when it does.
- *
- * The three modifiers above are for things that exist at both ends and travel
- * between them. This one is for the opposite case: something the article screen
- * draws on top of itself, which the list it grew out of has no counterpart for.
- * Without an enter it is simply there on the first frame, at full opacity, over a
- * rectangle that has barely started growing.
- *
- * [AnimatedVisibilityScope.animateEnterExit] is the documented answer -- the Compose
- * documentation recommends it by name for content inside a shared transition, *"to
- * avoid any abrupt visual changes"* -- and the scope it needs is the one this file
- * is already holding. A fade and nothing else: whatever this is put on is over the
- * top of a rectangle that is already moving, and a second thing moving on top of a
- * moving thing is what the transition was trimmed down to avoid.
- */
-@Composable
-fun Modifier.appearsWithTheArticle(): Modifier {
-    val motion = LocalArticleMotion.current ?: return this
-    return with(motion.visibility) {
-        this@appearsWithTheArticle.animateEnterExit(enter = fadeIn(), exit = fadeOut())
-    }
-}
-
-/**
  * The radius this end is drawing right now, somewhere between the two ends.
  *
  * **There is no *automatic* shape animation in Compose, which is not the same as

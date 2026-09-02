@@ -1256,3 +1256,47 @@ transition 的兩個子節點，所以逐幀算出同一個數字，誰也不必
 本來就會把它的 `enter`／`exit` 套在整棵子樹上，而 `WayBack` 在那棵子樹裡面。
 所以這個淡入是疊在那一層之上，不是取代它——兩個 alpha 相乘，曲線會比單一個淡入慢。
 在裝置上看到箭頭來得太慢的人，第一個該懷疑的就是這一層。
+
+---
+
+## 37. 返回箭頭不自己淡入——它上面已經有兩層淡了
+
+**症狀** —— 第 36 則上線後，文章頁的返回箭頭畫出來是 alpha 0：東西還在、點得到、
+按下去真的會回上一頁，但一個像素都沒畫，連它底下那條 scrim 也一起不見。
+
+**診斷** —— 第 36 則的前提是錯的。它說「沒有人給 `WayBack` enter 與 exit」，
+實際上給了兩個，而且兩個都套在整棵子樹上：
+
+1. **文章這個 scene 自己就會淡入。** `CardBecomesArticle` 把 `fadeIn()` 掛在
+   `NavDisplay.TransitionKey` 上，`AnimatedContent` 會把它交給 `AnimatedEnterExitImpl`，
+   套在整個進場 scene 的 `Layout` 上——`DetailScreen` 跟 `WayBack` 都在那個 `Layout` 裡面。
+2. **`sharedBounds` 配對成功時也會。** `SharedTransitionScope` 的實作是
+   `animatedVisibilityScope.transition.createModifier(enter, exit, isEnabled = { sharedContentState.isMatchFound })`，
+   而 `WayBack` 就在 `sharedArticleCard` 那棵子樹裡（第 36 則自己也寫下了這一點）。
+
+三層共用同一個 `Transition<EnterExitState>`。差別在**有沒有閘**：`sharedBounds` 那一層
+沒配對就把整個 layer 關掉（`isEnabled`），scene 那一層本來就是讓畫面看得見的那一層；
+而 `AnimatedVisibilityScope.animateEnterExit` 的 `isEnabled` 是寫死的 `{ true }`
+（`AnimatedVisibility.kt`），所以它在這個畫面活著的每一幀都掛著一個 `placeWithLayer`，
+alpha 是「scene transition 現在在哪個 `EnterExitState`」的函數——而 `PreEnter` 與
+`PostExit` 兩個狀態的值，就是 `fadeIn`／`fadeOut` 自己的 alpha，也就是 0
+（`EnterExitTransition.kt` 的 `createGraphicsLayerBlock`）。layout 還在、`IconButton`
+的 bounds 還在，所以還點得到。看到的正是這個。
+
+**選了** —— 把 `Modifier.appearsWithTheArticle()` 整個刪掉，讓上面那兩層做它們本來就在做的事。
+第 36 則想解決的「箭頭第一幀就在那裡」本來就不存在：它一直是跟著文章的 frame 一起淡進來的。
+
+**當時還考慮**
+
+- **留著 `animateEnterExit`，但也加一個 `isEnabled` 的閘。** 沒得加——那個參數在
+  `animateEnterExit` 上不是公開的，`createModifier` 才有，而它是 internal。
+- **把 `WayBack` 移進三個狀態裡面，變成內容的一部分。** 不行。它要浮在 Loading／Failed／
+  Content 三個之上，這正是第 34 則把它放在 `Box` 兄弟位置的理由。
+- **兩個機制都留著「比較保險」。** 這次的缺陷就是這樣來的：兩個 alpha 相乘，
+  其中一個沒有閘。
+
+**取捨與限制** —— **一樣沒有機器驗證，而且這一則的診斷有一段是推論。**
+可以從原始碼確定的是：那三層的來源、`sharedBounds` 有閘而 `animateEnterExit` 沒有、
+以及 `PreEnter`／`PostExit` 的 alpha 是 0。**沒有**從原始碼重建出「文章已經畫在螢幕上、
+scene transition 卻停在 `PreEnter`」的那條狀態序列——這個專案沒有截圖測試，
+箭頭現在是不是真的不透明，只有裝置能回答。

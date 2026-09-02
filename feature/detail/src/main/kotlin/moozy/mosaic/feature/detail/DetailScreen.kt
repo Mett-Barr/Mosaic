@@ -61,7 +61,6 @@ import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.MosaicTheme
-import moozy.mosaic.core.ui.appearsWithTheArticle
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -137,11 +136,7 @@ fun DetailScreen(
 
             is DetailUiState.Content -> Article(id, state, onBack, onKeep, onLetGo)
         }
-        WayBack(
-            onBack = onBack,
-            overPicture = overPicture,
-            modifier = Modifier.appearsWithTheArticle(),
-        )
+        WayBack(onBack = onBack, overPicture = overPicture)
     }
 }
 
@@ -172,13 +167,12 @@ fun DetailScreen(
  * gets `onSurface` and no scrim -- which is exactly what the bar that used to be
  * here gave it.
  *
- * **The scrim and the arrow arrive together, on one [modifier].** This is a sibling
- * of the state below it rather than part of it, so nothing here is inside the
- * article's own arrival unless it is put there -- see `appearsWithTheArticle`. Both
- * halves are put there at once, and not because it is fewer modifiers: the gradient
- * exists to make the arrow legible, so a gradient that arrived first would be a
- * dark band over a photograph with nothing in it, and an arrow that arrived first
- * would be the unreadable arrow the gradient is for. They are one thing.
+ * **The scrim and the arrow arrive together, and neither is given an enter here.**
+ * Two fades already cover this whole screen and everything in it: the article
+ * entry's own `fadeIn` (`CardBecomesArticle` in `:navigation`) and, while the card
+ * and the article are matched, the `enter` that `sharedArticleCard`'s `sharedBounds`
+ * applies to its subtree. A third fade laid on this Box would multiply with both
+ * rather than replace them (DECISIONS.md 37).
  */
 @Composable
 private fun WayBack(
