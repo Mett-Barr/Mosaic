@@ -53,16 +53,16 @@ fun ProvideArticleMotion(
  * that has margins of its own, so it is rounded; the article fills the display, and
  * something touching the edge of the display should not be rounded -- there is no
  * background left for the corner to be cut out of. So neither end asks for a shape.
- * Each says where it is, and both radii live below, in one place, because the two
- * ends still have to agree about what the *other* one looks like.
+ * Each says where it is, and the one radius lives below, in one place, because the
+ * two ends still have to agree about what the *other* one looks like.
+ *
+ * Only the container is told this. What is inside it is cut by it (see
+ * [sharedArticleImage]) and has no end of its own to declare.
  */
 enum class ArticleEnd { IN_A_LIST, FILLING_THE_DISPLAY }
 
 /** The corners a card keeps in either list. */
 private val CardCorner = 20.dp
-
-/** The corners of the photograph inside one. */
-private val PictureCorner = 14.dp
 
 /** No corners at all, for the end that has the display's own edge for a border. */
 private val FlushCorner = 0.dp
@@ -99,6 +99,10 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
  * modifiers before this one decide the bounds it animates, modifiers after it
  * measure what sits inside them, so a card sized before and an article sized
  * after are two different measurements of one rectangle.
+ *
+ * The clip declared here is not only this rectangle's. It is also the shape
+ * anything nested inside it is cut to while the transition runs, which is what
+ * [sharedArticleImage] leans on instead of declaring corners of its own.
  */
 @Composable
 fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
@@ -126,29 +130,32 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
  * An element and not bounds: it is the same photograph at both ends, so there is
  * nothing to cross-fade between -- only a rectangle to travel and a crop to grow.
  *
- * The corners are not decoration. While the transition runs the picture is lifted
- * into an overlay layer, which the Compose documentation is explicit about: it
- * *"will escape the parent's bounds and its layer transformations"*. A card that
- * rounds its picture by clipping the card is therefore rounding nothing once the
- * picture leaves -- the corners go square for exactly the length of the animation.
- * So the radius is declared twice: [OverlayClip] for the seconds it spends in the
- * overlay, and a clipping layer for every other frame. Both read the same [Dp], so
- * the frame the picture leaves the overlay on is the frame it was already drawing.
+ * **It asks for no shape, at either end.** A picture in a list is the top of a
+ * card with the words carrying on below it, so the corners it wants are the card's
+ * top two and nothing else -- rounding all four curves its bottom edge away from
+ * the text that follows. Filling the display it wants none at all. Both of those
+ * are already what the container it sits in cuts it to, and the container is the
+ * one thing that knows which end this is.
+ *
+ * That holds while the picture is in the air as well, which is the part worth
+ * saying out loud. The overlay a shared element is lifted into *"will escape the
+ * parent's bounds and its layer transformations"*, so a container's own clip stops
+ * applying for the length of the flight -- but `clipInOverlayDuringTransition`
+ * defaults to the parent's, which the Compose documentation states as *"the
+ * [SharedTransitionScope.sharedElement] is clipped by the
+ * `clipInOverlayDuringTransition` of its parent [SharedTransitionScope.sharedBounds]"*.
+ * The parent here is [sharedArticleCard], whose clip is the one already travelling
+ * between the two radii. Not passing one is therefore not an omission: it is how
+ * the picture is cut by the card on every frame rather than on most of them.
  */
 @Composable
-fun Modifier.sharedArticleImage(id: ArticleId, at: ArticleEnd): Modifier {
-    val motion = LocalArticleMotion.current
-        ?: return this.clip(RoundedCornerShape(at.corner(PictureCorner)))
-    val radius = motion.corner(at, PictureCorner)
+fun Modifier.sharedArticleImage(id: ArticleId): Modifier {
+    val motion = LocalArticleMotion.current ?: return this
     return with(motion.scope) {
-        val overlay = remember(radius) { OverlayClip(TravellingCorner(radius)) }
-        this@sharedArticleImage
-            .sharedElement(
-                sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
-                animatedVisibilityScope = motion.visibility,
-                clipInOverlayDuringTransition = overlay,
-            )
-            .roundedBy(radius)
+        this@sharedArticleImage.sharedElement(
+            sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
+            animatedVisibilityScope = motion.visibility,
+        )
     }
 }
 

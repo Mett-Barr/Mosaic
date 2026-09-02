@@ -311,14 +311,14 @@ private fun Article(
                 model = picture,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // This end of the flight fills the display, so the picture ends
-                // it with no corners at all: it is flush to the top and to both
-                // sides, and there is nothing left behind a rounded corner for
-                // it to be rounded against.
+                // Flush to the top and to both sides, with no corners at all --
+                // there is nothing left behind a rounded corner for it to be cut
+                // out of. The picture does not say so itself: the screen's own
+                // bounds are square at this end, and the picture is cut by them.
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
-                    .sharedArticleImage(id, ArticleEnd.FILLING_THE_DISPLAY),
+                    .sharedArticleImage(id),
             )
         } else {
             // No picture, and the arrow floating above is there all the same. This

@@ -279,10 +279,14 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     model = url,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    // No corners asked for here. The picture is the top of the
+                    // card and the words carry on below it, so the two corners it
+                    // needs are the card's own top two -- which is what the card
+                    // cuts it to, standing still and in the air alike.
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(LEAD_IMAGE_RATIO)
-                        .sharedArticleImage(article.id, ArticleEnd.IN_A_LIST),
+                        .sharedArticleImage(article.id),
                 )
             }
             Column(
@@ -334,9 +338,13 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // Same rule as the lead story's picture, and here it means a
+                // square thumbnail: a row has no card drawn around it, so the
+                // only thing cutting this is the row's own rounded rectangle,
+                // and the thumbnail sits well inside it.
                 modifier = Modifier
                     .size(THUMBNAIL)
-                    .sharedArticleImage(article.id, ArticleEnd.IN_A_LIST),
+                    .sharedArticleImage(article.id),
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
