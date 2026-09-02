@@ -11,7 +11,10 @@ import java.net.SocketTimeoutException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.SerializationException
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
+import moozy.mosaic.data.saved.SavedArticleDao
+import moozy.mosaic.data.saved.toArticle
 import moozy.mosaic.domain.model.ArticleId
+import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.ArticleResult
 import moozy.mosaic.domain.model.ArticlesResult
 import moozy.mosaic.domain.model.FeedFailure
@@ -19,23 +22,35 @@ import moozy.mosaic.domain.model.PageCursor
 import moozy.mosaic.domain.repository.ArticleRepository
 
 /**
- * The boundary where a failure stops being thrown and becomes an answer.
+ * Where an article comes from, decided in one place.
  *
- * Everything below here reports trouble by throwing, which is right for a
- * transport: there is no sensible return value for "the socket closed". Everything
- * above here has to choose a screen, and choosing is easier from a sealed type
- * than from a catch block that has to know what Ktor calls things.
+ * The two questions have different numbers of sources, and the name says which
+ * way the split falls. [article] has two: the copy the reader kept answers
+ * first, and the network is asked only when there is no such copy. [articles]
+ * has one and is not getting a second -- the feed is deliberately not
+ * offline-first (DECISIONS 25, 28), so a page is always the network's answer.
+ *
+ * Not `OfflineFirstArticleRepository`, which is Now in Android's name for this
+ * role: that name would claim something only half of this class does. Saved-first
+ * is the honest half, and it degenerates to network-first for the feed, where
+ * nothing is ever kept.
+ *
+ * It is also the boundary where a failure stops being thrown and becomes an
+ * answer. Everything below here reports trouble by throwing, which is right for
+ * a transport: there is no sensible return value for "the socket closed".
+ * Everything above here has to choose a screen, and choosing is easier from a
+ * sealed type than from a catch block that has to know what Ktor calls things.
  *
  * The kinds are the ones a reader can tell apart rather than the ones the library
  * happens to have: nothing left the phone, nothing came back in time, something
  * came back and it was an error, something came back and it made no sense.
  */
-internal class NetworkArticleRepository(
+internal class SavedFirstArticleRepository(
     private val api: SpaceflightNewsApi,
+    private val kept: SavedArticleDao,
     private val pageSize: Int = DEFAULT_PAGE_SIZE,
 ) : ArticleRepository {
 
-    // Nothing is cached here, so there is nothing for `force` to step past.
     override suspend fun articles(after: PageCursor?): ArticlesResult =
         when (val answer = asked { api.articles(limit = pageSize, after = after?.value) }) {
             is Answer.Yes -> ArticlesResult.Loaded(
@@ -47,7 +62,36 @@ internal class NetworkArticleRepository(
             is Answer.No -> ArticlesResult.Failed(answer.reason)
         }
 
+    /**
+     * An article the reader kept is theirs already: it is served from the phone
+     * and no request is made at all. The API only ever returns the summary this
+     * app already wrote down -- there is no full body to come back for -- so
+     * asking again would spend a request and a spinner on the one article they
+     * said they wanted available without either. What it costs is that a kept
+     * article stops following edits made at the source; DECISIONS 30 is the
+     * record of that trade.
+     */
     override suspend fun article(id: ArticleId): ArticleResult =
+        keptCopyOf(id)?.let(ArticleResult::Loaded) ?: fromTheNetwork(id)
+
+    /**
+     * The copy the reader kept, if there is one this app can still read.
+     *
+     * Trouble here is "there is nothing kept" rather than a failure of its own,
+     * because there is still a source left to ask. A row that will not become an
+     * article cannot be produced by anything that writes this table, but a row
+     * that arrived some other way should cost the reader a local answer, not the
+     * article. It goes through the same [asked] chain as a request so that the
+     * promise this class makes -- failures become answers -- covers the source
+     * that was added after the promise was written.
+     */
+    private suspend fun keptCopyOf(id: ArticleId): ArticleItem? =
+        when (val answer = asked { kept.find(id.value)?.toArticle() }) {
+            is Answer.Yes -> answer.value
+            is Answer.No -> null
+        }
+
+    private suspend fun fromTheNetwork(id: ArticleId): ArticleResult =
         when (val answer = asked { api.article(id.value) }) {
             // The request worked and what came back is not an article this app can
             // show. That is not the same as the article being missing, which
