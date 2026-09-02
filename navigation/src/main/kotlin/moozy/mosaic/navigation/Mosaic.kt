@@ -114,14 +114,17 @@ fun Mosaic(modifier: Modifier = Modifier) {
                         sharedTransitionScope = moving,
                         animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                     ) {
-                        // No destination bar here: an article is not one of the two
-                        // places, it is something opened from one of them, and the way
-                        // out of it is the way back in.
-                        Screen(title = "", onBack = { backStack.removeLastOrNull() }) { padding ->
+                        // No bar at either end. An article is not one of the two
+                        // places, so there is nothing to switch to at the bottom;
+                        // and at the top the picture is the first thing under the
+                        // status bar, so the way out has to float on the picture
+                        // rather than sit in a bar above it. The screen draws that
+                        // arrow itself, because only it knows whether there is a
+                        // photograph behind it (DECISIONS.md 34).
+                        EdgeToEdgeScreen {
                             DetailScreen(
                                 id = ArticleId(key.id),
                                 onBack = { backStack.removeLastOrNull() },
-                                modifier = Modifier.padding(padding),
                             )
                         }
                     }

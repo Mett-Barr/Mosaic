@@ -55,12 +55,12 @@ internal val LateralSwitch: Map<String, Any> = metadata {
  * is what the reader is meant to follow, and it was the quietest thing on screen.
  *
  * So each direction moves exactly one layer. Going in, the article's own frame --
- * the background and the bar at the top, which belong to neither container --
- * fades in over a list that stays where it was. Coming back, that frame fades
- * away again and the list is simply there, the way it never stopped being. What
- * crosses between the two *contents* is `sharedArticleCard`'s own fade, inside
- * the rectangle that is travelling, which is where the container-transform
- * pattern puts it.
+ * which is now nothing but its opaque background, since the bar at the top went
+ * when the picture took the top edge (DECISIONS.md 34) -- fades in over a list
+ * that stays where it was. Coming back, that frame fades away again and the list
+ * is simply there, the way it never stopped being. What crosses between the two
+ * *contents* is `sharedArticleCard`'s own fade, inside the rectangle that is
+ * travelling, which is where the container-transform pattern puts it.
  *
  * The two ways back ask for a z-index because the layer that fades has to be the
  * layer on top: `AnimatedContent` draws the arriving screen above the leaving

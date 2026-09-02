@@ -1101,3 +1101,73 @@ Saved 的卡片是 `fillMaxWidth().sharedArticleCard(id)`（尺寸在前），�
 不證明它動起來是對的（第 20 則與第 32 則末段講的是同一件事）。文件說的兩件事——順序
 要一致、尺寸放在後面——是查得到的；「一層淡比兩層淡好看」是設計判斷，只能在裝置上看。
 下一個人如果在裝置上看到回程變成硬切，第一個該懷疑的就是那個 `targetContentZIndex`。
+
+---
+
+## 34. 文章畫面自己畫邊界，兩個目的地維持原本的外框
+
+**選了** —— `:navigation` 多一個 `EdgeToEdgeScreen`：沒有頂欄、沒有底欄、不從內容扣掉任何
+inset，只留一層不透明背景。只有 `ArticleKey` 用它；Reading 與 Saved 仍舊用 `Screen`，一個
+pixel 都沒動。`Screen` 的 `onBack` 參數連同頂欄裡的返回箭頭一起刪掉——文章是它唯一的呼叫者，
+留著就是一段沒有人走的路。文章的圖片因此貼到最上緣、畫進狀態列底下，返回箭頭浮在圖片上，
+位置取自 `Modifier.windowInsetsPadding(WindowInsets.statusBars)` 而不是一個 dp 數字。
+
+**為什麼 scrim 與箭頭要在同一個模組** —— 照片的亮度沒有人能事先知道，所以白箭頭與黑箭頭
+都可能看不見；官方 edge-to-edge 指南對這件事的答案是 scrim，而不是選一個 icon 顏色。但
+「後面到底有沒有照片」只有畫面自己知道：`ArticleView.imageUrl` 可以是 null，Loading 與
+Failed 兩個狀態根本沒有圖。箭頭若留在 `:navigation`、scrim 留在 `:feature:detail`，就會有
+兩個必須對齊的東西分在兩個模組，而它們對齊的依據（狀態）只有其中一邊看得到。所以兩個
+一起搬進 `:feature:detail`，由 `DetailScreen` 疊在三個狀態之上。
+
+**一道漸層，不是兩道** —— 狀態列圖示與箭頭在同一條垂直帶上、上下相疊。兩道 scrim 疊在
+重疊處會把 alpha 加起來，而較短那道的下緣會留下一條看得見的階梯。所以只有一道：從狀態列
+上方開始，到箭頭下方才收到全透明（`Reach`＝觸控目標 48dp 再加一段，讓漸層在箭頭「之下」
+而不是「齊平」收尾；齊平的話箭頭下半部後面等於沒有東西）。
+
+**顏色取 `colorScheme.scrim`，不取 `surfaceContainer`** —— 指南給的範例用 surface 色，但那是
+為了保護「背景已知」的圖示。照片之上，淺色主題的 surface 會在照片上蓋一層白紗，而白色圖示
+還是一樣看不見。`scrim` 是唯一一個在深淺兩套配色都是黑的欄位——第 27 則要求每個顏色都落在
+既有色票欄位裡，而這一格正是為此存在的。
+
+**沒有圖片的那些情況** —— `overPicture` 為 false 時整道 scrim 不畫，箭頭改用 `onSurface`：
+背景是 app 自己的顏色、已知、對比夠，蓋一層黑紗是在保護一個沒有威脅的東西。Content 但沒有
+圖片時，捲動內容最上面留一段 `statusBars + Reach` 的空白，讓第一行字落在箭頭下面而不是箭頭
+底下；Loading 與 Failed 則整塊 `windowInsetsPadding(systemBars)`——上面已經沒有頂欄替它們
+扣掉系統列了。
+
+**inset 只付一次** —— `EdgeToEdgeScreen` 不扣也不 consume，所以每一段 inset 都由用得到它的
+那一段自己付：圖片一分不付（它要的就是那塊），箭頭付 statusBars，捲動內容的下緣付
+navigationBars，而且付在 `verticalScroll` 之內。官方指南要的正是把 inset 交給 scrollable 的
+contentPadding 而不是 padding 它的父層：padding 父層會讓圖片被切掉頂端，也會讓底部那段淨空
+變成永遠杵在那裡的邊界，而不是跟著最後一顆按鈕捲走。
+
+**當時還考慮**
+
+- **`Screen` 加一個旗標（或讓 `title` 為 null 就不畫頂欄）。** 改動最小，但 `Screen` 會變成
+  一個「有時候是外框、有時候不是」的東西，而兩種模式對 inset 的處理正好相反。兩個名字比
+  一個帶旗標的名字誠實。
+- **文章仍用 `Scaffold`，只把 `topBar` 留空、`contentWindowInsets` 設 0。** Scaffold 的工作
+  就是量 chrome 再從內容扣掉；沒有 chrome 可扣的 Scaffold 只剩一個容器色，而它的
+  `innerPadding` 會變成一個永遠是零、卻誘人拿去用的參數。
+- **箭頭留在 `:navigation`，只把 scrim 放進 `:feature:detail`。** 見上：兩個必須對齊的東西
+  分在兩個模組，而對齊的依據只有一邊看得到。
+- **箭頭底下放一個圓形 scrim（相片 app 常見的做法），不做漸層。** 它在任何背景上都成立，
+  但保護不到狀態列的圖示，所以狀態列還是得有第二道——又回到「兩道 scrim」那個問題。
+- **圖片在文章這端改成 `RectangleShape`，讓它真的方角貼邊。** 沒做。shared element 兩端必須
+  同形（`:core:ui` 的 KDoc 與第 33 則都寫了 Compose 沒有形狀動畫），改這一端就得同時改卡片
+  那端，而 feed 與 Saved 的卡片不能動。
+
+**取捨與限制**
+
+- **`:core:ui` 一行都沒改。** `sharedArticleImage(id, PictureShape)` 與
+  `sharedArticleCard(id, CardShape)` 兩個呼叫點都留在原處，變的只是圖片的目標矩形——現在是
+  整個螢幕寬、貼在最上緣。容器仍然 `clip(CardShape)`，所以**文章的四角本來就是 20dp 圓角**；
+  圖片頂到最上緣之後，那兩個上角會第一次被看見。這是既有行為被新版面照出來，不是新加的。
+  真要方角，要動的是容器的形狀，而那會連著轉場一起改。
+- **一樣沒有任何機器驗證。** `build detekt lint` 全綠只證明它會編譯（第 20、32、33 則講的是
+  同一件事）。這個專案沒有截圖測試：scrim 的 alpha 夠不夠、箭頭在有瀏海的機器上落在哪裡、
+  容器轉場在圖片改成貼頂之後看起來還對不對，全部只能在裝置上看。
+- **系統列圖示的顏色沒有動。** `MainActivity` 用的是 `ComponentActivity` 版的
+  `enableEdgeToEdge()`，官方文件明講在它之下不要自己設 `isAppearanceLightStatusBars`。
+  scrim 存在的理由正是這個：圖示顏色跟著主題走，照片不跟著主題走，中間那段差距只能靠
+  scrim 補。
