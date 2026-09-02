@@ -1934,3 +1934,75 @@ bar 的那一層量完之後把數字交下來**，畫面沒有第二個來源�
 - **清單現在真的畫在 bar 底下了。** `DestinationBar` 是不透明的 `surfaceContainer`，所以看
   不出來——但這是一條新的相依：哪天那條 bar 變成半透明或 blur，底下就會有東西透出來，
   而那是設計要不要的問題，不是 bug。
+
+---
+
+## 46. 一個動作只用一條彈簧——圓角本來跑在一條比矩形快將近兩倍的曲線上
+
+> **這一則取代第 35 則「取捨與限制」裡關於兩條 spring 的結論，但不改寫它。**
+> 35 則已經寫下「兩條動畫用的是兩個 spring，不是同一條曲線」，並判斷
+> 「它們同時開始、都不會過衝到看得出來，但沒有人保證它們同一幀結束」，
+> 所以把接出 `transitionSpec` 列為「在裝置上看得出差別之前，那是一個沒有依據的參數」。
+> **那個判斷太樂觀了。** 差別不在「同不同一幀結束」，而在其中一條大約是另一條的三倍長。
+> 35 則原文保留。
+
+**症狀** —— 把三個 animation scale 都調成 10 錄下來抽幀看：卡片長大的過程中，
+**它在很早的時候就已經是方角了**，剩下大半段是一個方角矩形在長大；回程反過來，
+半徑早早跳回 20dp，然後那個已經是圓角的矩形才慢慢縮回卡片的大小。
+
+**根因 —— 兩個預設值，而且它們不一樣。** 兩條曲線都不是選出來的，都是 library 的預設：
+
+| 動的東西 | 誰決定曲線 | 實際的值 |
+|---|---|---|
+| 圓角半徑 | `Transition.animateDp` 的 `transitionSpec` 預設 | `spring(visibilityThreshold = Dp.VisibilityThreshold)`＝`Spring.StiffnessMedium`＝**1500f**，門檻 0.4dp |
+| 矩形 bounds | `sharedBounds` 的 `boundsTransform` 預設 | `SharedTransitionDefaults.BoundsTransform`→`spring(stiffness = StiffnessMediumLow, visibilityThreshold = Rect.VisibilityThreshold)`＝**400f**，門檻 1px |
+
+值是從 `~/.gradle` 裡的 sources jar 讀出來的（`animation-core-android-1.11.4` 的
+`Transition.kt` 1996–2002 行與 `VectorizedAnimationSpec.kt` 791–807 行，
+`animation-android-1.11.4` 的 `SharedTransitionScope.kt` 1533 行），不是從記憶裡寫的。
+
+兩條都是臨界阻尼（`DampingRatioNoBouncy` = 1f），所以硬的那條就只是快的那條：
+剛度差 3.75 倍，角頻率差 √3.75 ≈ 1.94 倍。再加上門檻不同——20dp 收到 0.4dp 是收掉 98%，
+而一個長到整個螢幕的矩形收到 1px 要收掉 99.9% 以上——實際settle 時間大約是
+**0.15 秒對上 0.5 秒**。圓角在整段飛行的前三分之一就結束了。
+
+**選了** —— `:core:ui` 出現兩個 private 常數 `OneSpring` 與 `OneSpringForBounds`，
+兩個都是 `stiffness = Spring.StiffnessMediumLow`，差別只在型別與 visibility threshold；
+`animateDp` 接 `transitionSpec = { OneSpring }`，四個 shared modifier
+（卡片、圖片、標題、來源那一行）全部明寫 `boundsTransform = OneSpringForBounds`。
+
+**為什麼是留慢的那條** —— 兩個理由。一，圓角是矩形的性質，**要跟上矩形的是圓角**，
+不是反過來；把 bounds 提到 1500f 會讓整個容器轉場變成一個短促的彈出，
+那是改設計不是修缺陷。二，400f 本來就是這個轉場裡其他每一樣東西的曲線——
+`fadeIn()`／`fadeOut()` 自己的預設就是 `spring(stiffness = Spring.StiffnessMediumLow)`
+（`EnterExitTransition.kt` 305 行），`CardBecomesArticle` 那一層與
+`sharedArticleCard` 自己那一層都在用它。1500f 是這裡唯一的異類。
+
+**visibility threshold 不跟著統一** —— 它不是曲線的一部分：它回答的是「離終點多近算到了」，
+而「一個 dp 半徑的多近」跟「一個 px 矩形的多近」本來就不是同一個問題。統一它會讓
+圓角在還差 1dp 的時候就被判定結束，那是把一個修好的東西改壞。
+
+**為什麼四個都明寫，而不是只寫圓角那一個** —— 圖片、標題、來源那三個現在用的就是
+`SharedTransitionDefaults` 的值，明寫下去數字一格都沒變。差別在於**一個剛好相同的預設不是一個約定**：
+這次的缺陷正是這樣長出來的——`animateDp` 的預設換了一條曲線，而這個檔案裡沒有任何一行字改過。
+明寫之後它們是「改一個地方」的距離，不是「等一次 library release」的距離。
+
+**當時還考慮**
+
+- **把 bounds 改成 1500f，讓圓角維持不動。** 見上：那是把容器轉場整個變快，是設計決定。
+- **只修卡片那一個 `sharedBounds`，其他三個留預設。** 那樣圖片與文字仍然靠「預設剛好一樣」
+  跟卡片同步，而這一則的重點就是那句「剛好一樣」不算數。
+- **抽一個 public 的 `ArticleMotionDefaults` 讓呼叫端可以換曲線。** 沒有人要換。
+  第 32 則的線是「feature 只說自己是誰、不說怎麼動」，多開一個參數就是把動畫決定往外漏。
+- **順便把 `fadeIn()`／`fadeOut()` 也明寫成同一條。** 它們的預設已經是 400f，
+  而且那是 enter/exit 的預設不是 bounds 的預設，兩者沒有一起漂移的歷史。留著。
+
+**取捨與限制**
+
+- **模擬器抽幀能看到「改前是方的」，但看不到「改後每一幀都對」。** 這台模擬器在
+  10 倍 scale 下錄得到的不重複畫格個位數（第 45 則量過同一件事），足以看出
+  「大半段是方角」這種持續好幾幀的狀態，不足以逐幀比對兩條曲線的差。
+  **這一則的證據主力是原始碼裡的兩個數字，不是錄影。**
+- **`build detekt lint` 全綠只證明它會編譯。** 這個專案沒有截圖測試，
+  動畫這一整族的結論全部沒有機器驗證——第 20、32、33、34、35、43、45 則都寫過同一句。
+- **feed 的 `Surface` 仍然自己畫靜止的 20dp**（第 35 則的最後一條限制），這一則沒有動它。

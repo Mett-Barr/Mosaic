@@ -1,12 +1,17 @@
 package moozy.mosaic.core.ui
 
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
 import androidx.compose.animation.SharedTransitionScope.SharedContentState
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Outline
@@ -99,6 +105,56 @@ private val CardCorner = 20.dp
 private val FlushCorner = 0.dp
 
 /**
+ * One curve, for every part of one movement.
+ *
+ * **The two halves of this transition were on two different springs, and neither
+ * of them was chosen.** Each was a library default and the defaults disagree:
+ * `Transition.animateDp` defaults to `spring(visibilityThreshold =
+ * Dp.VisibilityThreshold)`, which is [Spring.StiffnessMedium] -- 1500 -- while
+ * `SharedTransitionDefaults.BoundsTransform` is `spring(stiffness =
+ * StiffnessMediumLow, visibilityThreshold = Rect.VisibilityThreshold)`, which is
+ * 400. Both are critically damped, so the stiffer one is simply the faster one:
+ * twenty dp of corner settling to within four tenths of a dp takes about 0.15s
+ * at 1500, while a rectangle growing to the whole display and settling to within
+ * a pixel takes about half a second at 400.
+ *
+ * So the card finished squaring itself off inside the first third of the flight
+ * and then grew the rest of the way as a rectangle with sharp corners; coming
+ * back it was at a full twenty dp long before it had finished shrinking. That is
+ * not what DECISIONS.md 35 describes and not what a container transform is.
+ *
+ * [Spring.StiffnessMediumLow] is the one kept, for two reasons: it is the slower
+ * of the two, and the corner has to keep up with the rectangle rather than the
+ * other way round; and it is what everything else in this transition already
+ * runs on -- the bounds by default, and `fadeIn()`/`fadeOut()`, whose own
+ * default spec is `spring(stiffness = Spring.StiffnessMediumLow)`.
+ *
+ * The visibility thresholds stay per-type. They are not part of the curve: they
+ * say how close to the end is close enough to stop, and "close enough" for a
+ * radius in dp and for a rectangle in pixels are different questions.
+ */
+private val OneSpring: FiniteAnimationSpec<Dp> = spring(
+    stiffness = Spring.StiffnessMediumLow,
+    visibilityThreshold = Dp.VisibilityThreshold,
+)
+
+/**
+ * The same curve again, for the rectangle the corner belongs to.
+ *
+ * Written out rather than left to `SharedTransitionDefaults.BoundsTransform`,
+ * even though the numbers it produces are the default's numbers. A default that
+ * happens to agree is not an agreement -- it is what let the corner drift onto a
+ * different spring without anything in this file changing. Passed explicitly,
+ * the two are one edit apart instead of one release apart.
+ */
+private val OneSpringForBounds = BoundsTransform { _, _ ->
+    spring(
+        stiffness = Spring.StiffnessMediumLow,
+        visibilityThreshold = Rect.VisibilityThreshold,
+    )
+}
+
+/**
  * The corners a card is drawn with, for the surface painting them behind itself.
  *
  * Here rather than in the feed because it is one half of an agreement: the shape a
@@ -172,6 +228,7 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
                 animatedVisibilityScope = motion.visibility,
                 enter = fadeIn(),
                 exit = fadeOut(),
+                boundsTransform = OneSpringForBounds,
                 resizeMode = ResizeMode.scaleToBounds(alignment = Alignment.TopCenter),
                 clipInOverlayDuringTransition = overlay,
             )
@@ -214,6 +271,7 @@ fun Modifier.sharedArticleImage(id: ArticleId, at: PictureSeat): Modifier {
             .sharedElement(
                 sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
                 animatedVisibilityScope = motion.visibility,
+                boundsTransform = OneSpringForBounds,
             )
             .ownCorners(at)
     }
@@ -254,6 +312,7 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
         this@sharedArticleTitle.sharedBounds(
             sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.TITLE)),
             animatedVisibilityScope = motion.visibility,
+            boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )
     }
@@ -283,6 +342,7 @@ fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
                 motion.key(id, ArticlePart.ATTRIBUTION),
             ),
             animatedVisibilityScope = motion.visibility,
+            boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )
     }
@@ -309,10 +369,17 @@ fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
  * dp -- a jump wearing an animation's clothes -- or round the lead card's picture
  * almost square while it is sitting still. The transition's progress is the thing
  * that actually runs from one end to the other; the width only nearly does.
+ *
+ * **[OneSpring] is passed rather than left to `animateDp`'s default**, because the
+ * default is a faster curve than the rectangle's and a corner that arrives first
+ * is a corner that spends the rest of the flight being wrong.
  */
 @Composable
 private fun ArticleMotion.corner(at: ArticleEnd, inAList: Dp): State<Dp> =
-    visibility.transition.animateDp(label = "article corner") { state ->
+    visibility.transition.animateDp(
+        transitionSpec = { OneSpring },
+        label = "article corner",
+    ) { state ->
         val drawing = if (state == EnterExitState.Visible) at else at.other
         drawing.corner(inAList)
     }
