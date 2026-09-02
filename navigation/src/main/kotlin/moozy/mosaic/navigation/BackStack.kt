@@ -19,6 +19,11 @@ internal fun MutableList<NavKey>.goTo(key: NavKey) {
  *
  * Deliberately not a second entry pushed on top: a reader who taps Reading and
  * then presses back would otherwise land on Saved, having never chosen it.
+ *
+ * So the two directions really are an add and a remove, and they used to look
+ * like it. They no longer do: [LateralSwitch] gives Saved the same slide either
+ * way, because these two are siblings and only the stack has an opinion about
+ * which sits under which.
  */
 internal fun MutableList<NavKey>.goToDestination(destination: Destination) {
     when (destination) {

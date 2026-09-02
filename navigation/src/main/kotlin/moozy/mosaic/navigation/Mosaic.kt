@@ -52,7 +52,9 @@ fun Mosaic(modifier: Modifier = Modifier) {
                     )
                 }
             }
-            entry<SavedKey> {
+            // Saved carries the transitions for both directions of the bar at the
+            // bottom, because it is the entry on top in both of them.
+            entry<SavedKey>(metadata = LateralSwitch) {
                 Screen(
                     title = "Saved",
                     bar = {
