@@ -490,6 +490,12 @@ Views 至少還能用 JVM 測 presenter 對 view 介面的呼叫。這就是為�
 
 ## 22. 三層：DTO → domain model → UI state
 
+> **這一則的結構還成立，表格裡的型別名有三個已經不在了**（第 28、30 則）：
+> `FeedUiState` 被刪掉，UI 那格現在是 `ArticleRow`／`WeatherHeadline` 加一個**推導出來的**
+> `FeedPhase`；磁碟那格的 `StoredArticle`／`StoredPage` 隨文章快取一起消失，現在只剩
+> `StoredWeather` 和 `SavedArticleEntity`。三層本身沒有變——**不改寫下面的表格**，
+> 因為它記的是當時的決定，而當時那些型別是真的存在。
+
 **選了** —— 資料在到達畫面之前經過三種形狀，每一種只回答一個問題：
 
 | 層 | 型別 | 回答什麼 | 住在哪 |
@@ -611,6 +617,11 @@ val state = combine(_state, weather.current) { feed, sky ->
 已經在磁碟上的讀數會跟著新規則走；存結論的話會卡在舊規則直到被重抓。
 
 ## 25. 文章沒有新鮮度視窗，因為沒有人會不小心去要第一頁
+
+> **這一則的結論成立，但它的最後一步走得比這裡寫的更遠**（第 28 則）：下面說「檔案留著，
+> 但改了身分」——後來連檔案也沒留。Paging 沒有辦法被交付一段初始資料，一個只在失敗時
+> 被讀的快取因此沒有入口，`ArticlesWithAFallback`、`FileArticleCache`、`articles.json`
+> 三個一起刪掉（commit `1a2fc6c`）。feed 現在完全沒有磁碟快取。
 
 **這一則是使用者決定的。**
 

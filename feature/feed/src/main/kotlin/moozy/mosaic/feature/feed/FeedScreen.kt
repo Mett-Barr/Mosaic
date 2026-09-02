@@ -63,8 +63,12 @@ fun FeedRoute(
 
 /**
  * Every state the feed can be in has somewhere to go here, and the compiler is the
- * one checking that: [FeedUiState] is sealed, so a state added later without a
+ * one checking that: [FeedPhase] is sealed, so a state added later without a
  * branch to draw it will not build.
+ *
+ * The phase is worked out by [feedPhase] rather than held anywhere. Nothing in
+ * this file decides which screen this is -- that decision has tests, and a
+ * decision made inside a composable would not.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
