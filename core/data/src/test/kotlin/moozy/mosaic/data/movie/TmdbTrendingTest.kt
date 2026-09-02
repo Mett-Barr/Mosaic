@@ -12,7 +12,11 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.Clock
@@ -195,6 +199,46 @@ class TmdbTrendingTest {
     }
 
     @Test
+    fun `the minute a refusal buys is not spent by the reader coming back`() = runTest {
+        // Reading -> Saved -> Reading, or a trip out of the app and back: the
+        // strip loses its watcher for longer than the sharing grace, so the flow
+        // is torn down and the next subscriber starts it again from the top.
+        // Every other test here subscribes once, which is why none of them has
+        // anything to say about what the second subscription costs.
+        val asked = Channel<Unit>(Channel.UNLIMITED)
+        val films = trending(refusing(asked))
+
+        val watching = launch { films.trending.collect {} }
+        asked.receive()
+        assertEquals("the first reader pays for the one attempt", 1, requests)
+        assertEquals("and pays for it immediately", 0L, currentTime)
+
+        watching.cancel()
+        runCurrent()
+        advanceTimeBy(WATCHING_GRACE_LAPSED)
+        val cameBack = currentTime
+
+        // Somebody opens the feed again. Whether that costs a request is the
+        // whole question: the flow starts over from the top and reads nothing
+        // back, because a failure writes nothing down.
+        val watchingAgain = launch { films.trending.collect {} }
+        asked.receive()
+        val secondAttempt = currentTime - cameBack
+        watchingAgain.cancel()
+
+        // The wait belongs to the failure, not to whoever happened to be
+        // watching when it happened. Otherwise a revoked or mistyped token is a
+        // 401 on every visit to the feed for as long as the app is installed --
+        // and nobody is ever told, because a failure here means a shorter strip
+        // and nothing else.
+        assertEquals(
+            "coming back to the feed does not shorten the wait a refusal bought",
+            AFTER_A_FAILURE,
+            secondAttempt,
+        )
+    }
+
+    @Test
     fun `a day that arrived is written down, so the next launch does not ask`() = runTest {
         val store = InMemoryStore()
         val films = trending(alwaysAnswering(), store)
@@ -221,6 +265,20 @@ class TmdbTrendingTest {
     private fun alwaysAnswering() = MockEngine {
         requests++
         respond(page(), HttpStatusCode.OK, json)
+    }
+
+    /**
+     * A source that says no, and says so out loud.
+     *
+     * The counter alone cannot be read from the test: `MockEngine` answers on
+     * its own dispatcher rather than on the test scheduler, so "the request has
+     * been made" is not something the virtual clock knows. [asked] is how the
+     * test waits for it instead of guessing.
+     */
+    private fun refusing(asked: Channel<Unit>) = MockEngine {
+        requests++
+        asked.trySend(Unit)
+        respondError(HttpStatusCode.InternalServerError)
     }
 
     private val json = headersOf(HttpHeaders.ContentType, "application/json")
@@ -251,3 +309,12 @@ class TmdbTrendingTest {
         }
     }
 }
+
+/**
+ * Past `SharingStarted.WhileSubscribed`'s five seconds, so that the next
+ * subscriber really does start the flow again rather than joining the old one.
+ */
+private const val WATCHING_GRACE_LAPSED = 6_000L
+
+/** The wait a refused day buys, which the repository states as a minute. */
+private const val AFTER_A_FAILURE = 60_000L
