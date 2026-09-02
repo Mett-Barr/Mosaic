@@ -1,6 +1,5 @@
 package moozy.mosaic.feature.saved
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +19,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -34,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.collections.immutable.persistentListOf
+import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.domain.model.ArticleId
 
 /**
@@ -221,31 +219,13 @@ private val PreviewKept = SavedUiState.Content(
 )
 
 /**
- * Material's own colours, not the app's.
- *
- * `MosaicTheme` lives in `:core:ui`, and this module is allowed to depend on
- * `:core:domain` and nothing else -- `checkModuleDependencies` fails the build
- * over it, so a preview cannot buy its way past the rule. At runtime the theme
- * arrives through Compose from whoever applied it above, and a still render has
- * no whoever. So what the two below check is layout and contrast; the green, and
- * the wider corners the app draws, are somebody else's to get wrong.
- */
-@Composable
-private fun SavedPreviewTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(),
-        content = content,
-    )
-}
-
-/**
  * One theme: a centred paragraph of `onSurfaceVariant`, which is the pairing
  * [SavedListPreviews] already holds up to both schemes.
  */
 @Preview
 @Composable
 private fun EmptyStatePreview() {
-    SavedPreviewTheme {
+    MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
     }
 }
@@ -256,11 +236,16 @@ private fun EmptyStatePreview() {
  * Worth two renders because three fills sit on top of one another here -- the
  * note on `surfaceContainerHigh`, the cards on `surfaceContainer`, both on
  * `background` -- and a scheme that flattens them takes the cards' edges with it.
+ *
+ * The app's own theme, now that this module can reach it. Until this commit these
+ * two previews drew Material's default palette, because `MosaicTheme` was on the
+ * other side of a module edge that did not exist -- so what they checked was
+ * layout and contrast, and the green was somebody else's to get wrong.
  */
 @PreviewLightDark
 @Composable
 private fun SavedListPreviews() {
-    SavedPreviewTheme {
+    MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             SavedList(state = PreviewKept, onOpenArticle = {}, onLetGo = {})
         }

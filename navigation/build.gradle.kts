@@ -69,6 +69,12 @@ dependencies {
     implementation(project(":feature:saved"))
     implementation(project(":core:domain"))
 
+    // The scopes a shared element needs are handed to the screens through a
+    // CompositionLocal that lives in :core:ui, and this is the module that fills
+    // it -- it is the only one that can, because it is the only one holding the
+    // SharedTransitionLayout and the NavDisplay underneath it. See DECISIONS.md 32.
+    implementation(project(":core:ui"))
+
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.androidx.compose.bom))

@@ -47,8 +47,8 @@ DTO 或 Compose 型別因此**進不去**——不是靠審查時有人注意到
 
 graph TB
   subgraph :core
-    :core:data["data"]
     :core:domain["domain"]
+    :core:data["data"]
     :core:ui["ui"]
   end
   subgraph :feature
@@ -56,32 +56,44 @@ graph TB
     :feature:detail["detail"]
     :feature:saved["saved"]
   end
+  : --> :core:domain
+  : --> :core:data
+  : --> :core:ui
+  : --> :feature:feed
+  : --> :feature:detail
+  : --> :feature:saved
+  : --> :navigation
+  : --> :app
   :core:data --> :core:domain
+  :feature:detail --> :core:domain
+  :feature:detail --> :core:ui
   :navigation --> :feature:feed
   :navigation --> :feature:detail
   :navigation --> :feature:saved
   :navigation --> :core:domain
-  :feature:detail --> :core:domain
-  :feature:detail --> :core:ui
+  :navigation --> :core:ui
   :core:ui --> :core:domain
   :feature:feed --> :core:domain
   :feature:feed --> :core:ui
   :feature:saved --> :core:domain
+  :feature:saved --> :core:ui
   :app --> :core:data
   :app --> :core:domain
   :app --> :core:ui
   :app --> :navigation
 
-classDef android-library fill:#3BD482,stroke:#fff,stroke-width:2px,color:#fff;
+classDef unknown fill:#676767,stroke:#fff,stroke-width:2px,color:#fff;
 classDef kotlin-jvm fill:#8150FF,stroke:#fff,stroke-width:2px,color:#fff;
+classDef android-library fill:#3BD482,stroke:#fff,stroke-width:2px,color:#fff;
 classDef android-application fill:#2C4162,stroke:#fff,stroke-width:2px,color:#fff;
-class :core:data android-library
+class : unknown
 class :core:domain kotlin-jvm
-class :navigation android-library
+class :core:data android-library
+class :core:ui android-library
 class :feature:feed android-library
 class :feature:detail android-library
 class :feature:saved android-library
-class :core:ui android-library
+class :navigation android-library
 class :app android-application
 
 ```

@@ -33,11 +33,16 @@ val allowedProjectDependencies = mapOf(
     // that two screens have to agree on, and did not while each kept its own.
     ":feature:feed" to setOf(":core:domain", ":core:ui"),
     ":feature:detail" to setOf(":core:domain", ":core:ui"),
-    ":feature:saved" to setOf(":core:domain"),
+    // The last feature to gain this edge. It held out because it needed nothing
+    // Compose could not carry down, and it stopped holding out for the same reason
+    // the other two have it: the ends of a shared element are in two modules and
+    // both have to name it the same way (DECISIONS.md 32).
+    ":feature:saved" to setOf(":core:domain", ":core:ui"),
     // The one module that knows which screen leads to which, and therefore the
-    // only one allowed to see every feature at once.
+    // only one allowed to see every feature at once. It reaches :core:ui to fill
+    // the CompositionLocal the screens read their transition scopes from.
     ":navigation" to setOf(
-        ":core:domain", ":feature:feed", ":feature:detail", ":feature:saved",
+        ":core:domain", ":core:ui", ":feature:feed", ":feature:detail", ":feature:saved",
     ),
     // :app is the composition root and nothing else. It must not declare an edge
     // to a feature -- the moment it has one, a screen decision can be made there
