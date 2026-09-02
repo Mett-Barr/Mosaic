@@ -8,6 +8,7 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -245,6 +246,29 @@ class TmdbTrendingTest {
     }
 
     @Test
+    fun `a clock corrected backwards under the wait is not a wait that long`() = runTest {
+        val asked = Channel<Unit>(Channel.UNLIMITED)
+        val films = trending(refusing(asked))
+
+        val watching = launch { films.trending.collect {} }
+        assertTrue("the first reader pays for one attempt", within(A_MOMENT, asked))
+        settleUntil { films.lastProblem != null }
+
+        // The device had been running three days fast and has just reached a
+        // time server for the first time. Nothing about the refusal changed --
+        // only the calendar the wait is being measured against did.
+        now = now.minus(Duration.ofDays(A_CORRECTION_IN_DAYS))
+
+        // A minute is a minute. Read as "how long since an instant that is now
+        // in the future", it is three days: three days in which no request is
+        // ever made, on a `@Singleton` that survives every teardown, with
+        // nothing on screen that would ever say so.
+        advanceTimeBy(AFTER_A_FAILURE + 1)
+        assertTrue("the wait is a minute, not the size of the jump", within(A_MOMENT, asked))
+        watching.cancel()
+    }
+
+    @Test
     fun `a day that arrived is written down, so the next launch does not ask`() = runTest {
         val store = InMemoryStore()
         val films = trending(alwaysAnswering(), store)
@@ -366,6 +390,12 @@ private const val WATCHING_GRACE_LAPSED = 6_000L
 
 /** The wait a refused day buys, which the repository states as a minute. */
 private const val AFTER_A_FAILURE = 60_000L
+
+/**
+ * A backwards correction large enough that serving it as a wait would be a
+ * silence measured in days rather than in minutes.
+ */
+private const val A_CORRECTION_IN_DAYS = 3L
 
 /** A second of real milliseconds, which is a very long time for a mock to answer in. */
 private const val SETTLING_TRIES = 1_000
