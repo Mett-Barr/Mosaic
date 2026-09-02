@@ -99,8 +99,10 @@ internal class FileTrendingStore(
                         // Neither day survived. Say so, and take the half of a
                         // file with it: a `.writing` left in the cache
                         // directory is a stranger nothing will ever read, and
-                        // the next successful write would have to clear it
-                        // before it could rename onto it anyway.
+                        // that is the whole reason. The next write would not
+                        // have cleared it -- `writeText` opens it and truncates
+                        // it in place, and the name being renamed onto is the
+                        // real file's, not this one's.
                         lastProblem = "the day could not be put in place of the last one"
                         writing.delete()
                     }
