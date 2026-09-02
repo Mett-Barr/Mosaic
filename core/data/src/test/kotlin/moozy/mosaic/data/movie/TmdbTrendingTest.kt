@@ -24,6 +24,7 @@ import moozy.mosaic.domain.model.Movie
 import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.TrendingMovies
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -210,34 +211,37 @@ class TmdbTrendingTest {
         val films = trending(refusing(asked))
 
         val watching = launch { films.trending.collect {} }
-        asked.receive()
+        assertTrue("the first reader pays for one attempt", within(A_MOMENT, asked))
         settleUntil { films.lastProblem != null }
-        assertEquals("the first reader pays for the one attempt", 1, requests)
-        assertEquals("and pays for it immediately", 0L, currentTime)
+        assertEquals("and pays for it straight away", 0L, currentTime)
 
         watching.cancel()
         runCurrent()
         advanceTimeBy(WATCHING_GRACE_LAPSED)
-        val cameBack = currentTime
 
-        // Somebody opens the feed again. Whether that costs a request is the
-        // whole question: the flow starts over from the top and reads nothing
-        // back, because a failure writes nothing down.
+        // Somebody opens the feed again. The flow starts over from the top and
+        // reads nothing back, because a refusal writes nothing down. Whether
+        // that costs a request is the whole question.
         val watchingAgain = launch { films.trending.collect {} }
-        asked.receive()
-        val secondAttempt = currentTime - cameBack
-        watchingAgain.cancel()
 
-        // The wait belongs to the failure, not to whoever happened to be
-        // watching when it happened. Otherwise a revoked or mistyped token is a
-        // 401 on every visit to the feed for as long as the app is installed --
-        // and nobody is ever told, because a failure here means a shorter strip
-        // and nothing else.
-        assertEquals(
-            "coming back to the feed does not shorten the wait a refusal bought",
-            AFTER_A_FAILURE,
-            secondAttempt,
+        // The wait belongs to the refusal, not to whoever happened to be
+        // watching when it was bought. Otherwise a revoked or mistyped token is
+        // a 401 on every visit to the feed for as long as the app is installed
+        // -- and nobody is ever told, because a failure here means a shorter
+        // strip and nothing else.
+        assertFalse(
+            "coming back to the feed is not a reason to ask again",
+            within(A_MOMENT, asked),
         )
+
+        // A wait and not a stop, which is the other half of the same policy.
+        // Both clocks move, because on a device they are the same clock: the
+        // scheduler's, which decides when the flow wakes, and the reader's,
+        // which decides whether the wait it wakes into has been served.
+        now = now.plusMillis(AFTER_A_FAILURE + 1)
+        advanceTimeBy(AFTER_A_FAILURE + 1)
+        assertTrue("but the minute does run out", within(A_MOMENT, asked))
+        watchingAgain.cancel()
     }
 
     @Test
@@ -289,6 +293,26 @@ class TmdbTrendingTest {
             Thread.sleep(1)
         }
         fail("the repository never settled")
+    }
+
+    /**
+     * Whether a request turns up in the next [tries] milliseconds of real time.
+     *
+     * The negative is the assertion that matters here, and a negative needs a
+     * bound that is real rather than virtual: waiting on the virtual clock
+     * would run the very retry the test is trying to prove has not happened
+     * yet. So this gives the flow and the engine's own dispatcher a fixed
+     * number of turns and reports what they did with them, moving the virtual
+     * clock not at all.
+     */
+    private fun TestScope.within(tries: Int, asked: Channel<Unit>): Boolean {
+        repeat(tries) {
+            runCurrent()
+            if (asked.tryReceive().isSuccess) return true
+            @Suppress("ForbiddenMethodCall")
+            Thread.sleep(1)
+        }
+        return false
     }
 
     /**
@@ -345,3 +369,9 @@ private const val AFTER_A_FAILURE = 60_000L
 
 /** A second of real milliseconds, which is a very long time for a mock to answer in. */
 private const val SETTLING_TRIES = 1_000
+
+/**
+ * Long enough that a mock answering on another thread has certainly had its
+ * turn, short enough that spending it twice is not felt.
+ */
+private const val A_MOMENT = 300
