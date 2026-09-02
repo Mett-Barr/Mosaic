@@ -55,7 +55,8 @@ val allowedProjectDependencies = mapOf(
 dependencies {
     listOf(
         ":core:domain", ":core:data", ":core:ui",
-        ":feature:feed", ":feature:detail", ":feature:saved", ":app",
+        ":feature:feed", ":feature:detail", ":feature:saved",
+        ":navigation", ":app",
     ).forEach { kover(project(it)) }
 }
 

@@ -93,15 +93,23 @@ moozy/mosaic/data/saved              97.2%  106/109
 moozy/mosaic/data/article            95.0%   38/40
 moozy/mosaic/data/weather            92.1%  140/152
 ──────────────────────────────────────────────────
-moozy/mosaic/feature/detail          38.7%   67/173
-moozy/mosaic/feature/feed            28.8%   84/292
-moozy/mosaic/feature/saved           20.9%   18/86
+moozy/mosaic/feature/detail          31.3%   67/214
+moozy/mosaic/feature/feed            23.0%   84/366
+moozy/mosaic/feature/saved           15.3%   18/118
 moozy/mosaic/core/ui                  2.9%    3/103
-moozy/mosaic (MainActivity)           0.0%    0/115
+moozy/mosaic/navigation               0.0%    0/111
 moozy/mosaic/data/di                  0.0%    0/60
+moozy/mosaic (MainActivity)           0.0%    0/5
 ──────────────────────────────────────────────────
-全專案                                46.2%  580/1255
+全專案                                41.3%  580/1403
 ```
+
+**這個數字剛從 46.2% 掉到 41.3%，而那是一次改善造成的。** 被測到的行數一行沒少
+（580 → 580）；分母變大了，因為新增了每個畫面狀態的 `@Preview`（feed 從 292 行變
+366 行）和一個新的 `:navigation` 模組（111 行）。preview 是給人看的，測試不會執行它。
+
+**這正是不設門檻的理由。** 一條「不得低於 46%」的規則會擋下這兩件事——而它們都讓
+這份 codebase 變好了。
 
 **46.2% 這個數字單獨拿出來會誤導。** 它描述的不是「測試寫得不夠」，而是一條很清楚的
 分界線：**所有做決定的地方在 92–100%，沒測的全部是畫面與接線**。

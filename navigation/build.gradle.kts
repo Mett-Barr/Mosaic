@@ -7,6 +7,7 @@ plugins {
     // one that needs the serialization plugin -- :app no longer declares a key.
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.kover)
 }
 
 composeCompiler {
