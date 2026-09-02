@@ -216,8 +216,17 @@ class TmdbTrendingTest {
         settleUntil { films.lastProblem != null }
         assertEquals("and pays for it straight away", 0L, currentTime)
 
+        // Both clocks move, because on a device they are the same clock: the
+        // scheduler's, which decides when the flow wakes, and the reader's,
+        // which decides whether the wait it wakes into has been served. Leaving
+        // the reader's frozen for the time away is what made this test unable
+        // to see the bug it is named for -- with `now` still standing at the
+        // refusal, the returning reader was charged a whole fresh minute, and
+        // the remainder that is the entire point of the function was never
+        // computed at all.
         watching.cancel()
         runCurrent()
+        now = now.plusMillis(WATCHING_GRACE_LAPSED)
         advanceTimeBy(WATCHING_GRACE_LAPSED)
 
         // Somebody opens the feed again. The flow starts over from the top and
@@ -235,12 +244,14 @@ class TmdbTrendingTest {
             within(A_MOMENT, asked),
         )
 
-        // A wait and not a stop, which is the other half of the same policy.
-        // Both clocks move, because on a device they are the same clock: the
-        // scheduler's, which decides when the flow wakes, and the reader's,
-        // which decides whether the wait it wakes into has been served.
-        now = now.plusMillis(AFTER_A_FAILURE + 1)
-        advanceTimeBy(AFTER_A_FAILURE + 1)
+        // A wait and not a stop, which is the other half of the same policy --
+        // and what is left of the wait, not another whole one. Six of the sixty
+        // seconds were served with nobody watching, so only the remainder is
+        // advanced here: an implementation that started the minute over for the
+        // returning reader would still be six seconds short of asking, and this
+        // is the only assertion in the file that would notice.
+        now = now.plusMillis(WHAT_IS_LEFT_OF_THE_MINUTE)
+        advanceTimeBy(WHAT_IS_LEFT_OF_THE_MINUTE)
         assertTrue("but the minute does run out", within(A_MOMENT, asked))
         watchingAgain.cancel()
     }
@@ -390,6 +401,16 @@ private const val WATCHING_GRACE_LAPSED = 6_000L
 
 /** The wait a refused day buys, which the repository states as a minute. */
 private const val AFTER_A_FAILURE = 60_000L
+
+/**
+ * What the reader who comes back still owes: the minute less the part of it
+ * that was served while nobody was watching, and one millisecond to land past
+ * the end of it rather than exactly on it.
+ *
+ * Advancing a whole minute here instead would pass whether the wait survived
+ * the watcher or started again with the next one.
+ */
+private const val WHAT_IS_LEFT_OF_THE_MINUTE = AFTER_A_FAILURE - WATCHING_GRACE_LAPSED + 1
 
 /**
  * A backwards correction large enough that serving it as a wait would be a
