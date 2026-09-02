@@ -1233,3 +1233,26 @@ transition 的兩個子節點，所以逐幀算出同一個數字，誰也不必
   只畫進場那端。要讓它也跟著收，`Surface` 的 `shape` 也得變成動畫值，那會把 feed 拉進這次
   改動裡，而 feed 不准動。
 
+---
+
+## 36. 返回箭頭跟著文章一起到，scrim 跟它同進同出
+
+**症狀** —— `WayBack` 是 `DetailScreen` 那個 `Box` 裡的兄弟節點：它在兩個畫面之間
+沒有對應物，所以不是任何 shared element，也沒有人給它 enter 與 exit。
+
+**選了** —— `:core:ui` 多一個 `Modifier.appearsWithTheArticle()`，裡面就是
+`AnimatedVisibilityScope.animateEnterExit`（Compose 文件對這種東西指名的答案，
+*"to avoid any abrupt visual changes"*）。那個 scope `ArticleMotion` 本來就握著，
+只是一直是 private。行為跟旁邊三個 modifier 一模一樣：沒有人提供 motion 時它什麼都不加，
+所以 preview 照畫。只給淡入淡出，不給位移：它浮在一個已經在長大的矩形上面，
+而「會動的東西上面再疊一個會動的東西」正是第 33 則把轉場削到只剩一層淡的原因。
+
+**scrim 跟箭頭一起，不分開** —— 不是為了少寫一個 modifier。漸層存在的唯一理由是
+讓箭頭在照片上看得見（第 34 則）：先到的漸層是照片上一條沒有內容的黑帶，
+先到的箭頭就是漸層要救的那個看不見的箭頭。它們是一個東西，所以拿一個 `Modifier`。
+
+**取捨與限制** —— **這一則一樣沒有機器驗證。** 而且有一件事要講清楚：
+`sharedBounds` 在配對成功時（`isEnabled = { sharedContentState.isMatchFound }`）
+本來就會把它的 `enter`／`exit` 套在整棵子樹上，而 `WayBack` 在那棵子樹裡面。
+所以這個淡入是疊在那一層之上，不是取代它——兩個 alpha 相乘，曲線會比單一個淡入慢。
+在裝置上看到箭頭來得太慢的人，第一個該懷疑的就是這一層。
