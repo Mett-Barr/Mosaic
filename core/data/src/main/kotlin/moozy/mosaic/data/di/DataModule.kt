@@ -24,6 +24,7 @@ import moozy.mosaic.data.saved.ImportSavedArticles
 import moozy.mosaic.data.saved.RoomSavedArticles
 import moozy.mosaic.data.saved.SavedArticlesDatabase
 import moozy.mosaic.data.weather.FileWeatherStore
+import moozy.mosaic.data.weather.OpenMeteoApi
 import moozy.mosaic.data.weather.OpenMeteoWeather
 import moozy.mosaic.data.weather.Place
 import moozy.mosaic.data.weather.openMeteoClient
@@ -82,8 +83,10 @@ internal object DataModule {
     @Singleton
     fun weatherRepository(@ApplicationContext context: Context): WeatherRepository =
         OpenMeteoWeather(
-            client = openMeteoClient(OkHttp.create()),
-            place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
+            api = OpenMeteoApi(
+                client = openMeteoClient(OkHttp.create()),
+                place = Place(name = "Taipei", latitude = 25.033, longitude = 121.5654),
+            ),
             clock = Clock { Instant.now() },
             // A scope that outlives every screen, because the stream is shared
             // by all of them and must not end when one of them does. It is
