@@ -1565,3 +1565,96 @@ freshness 規則本身有測試釘住——它數的是請求次數，不是畫�
 - **`ArticlesTheFeedShowed` 用 `@Synchronized`。** Paging 在它自己的 dispatcher 上寫，
   文章畫面在 Main 上讀，這是真的跨執行緒。沒有測試證明那個競態被擋住——
   它證明的是單執行緒下的行為。
+---
+
+## 42. 底部那條 bar 搬到 `NavDisplay` 外面，因為它是讀者「拿來導覽的東西」
+
+**症狀** —— 從 Reading 切到 Saved，**整條 bar 跟著畫面一起滑走再滑進來**。
+打開一篇文章，bar 也跟著整個畫面一起被帶走。它明明是那個「不動的、讀者用來換地方」的
+東西，卻每次換地方都自己也換了一次。
+
+**根因** —— `Mosaic.kt` 每個 entry 都給 `Screen(bar = { DestinationBar(...) })`，
+而 `Screen` 把它放進 `Scaffold(bottomBar = ...)`——**在 `NavEntry` 裡面**。
+`NavDisplay` 轉場的單位是 entry，所以 bar 是被轉場的東西之一。
+它甚至被畫了兩份：離場那個 entry 一份、進場那個 entry 一份，兩份一起滑。
+
+**選了** —— `Scaffold` 移到 `NavDisplay` 外面（也在 `SharedTransitionLayout` 裡面）：
+
+```kotlin
+SharedTransitionLayout(modifier) {
+    Scaffold(bottomBar = { /* … */ }) { padding ->
+        NavDisplay(modifier = Modifier.padding(padding), …)
+    }
+}
+```
+
+`Screen` 的 `bar` 參數刪掉，它現在只剩頂欄。
+
+**為什麼 `SharedTransitionLayout` 在最外面** —— shared element 飛行時會被抬進一層
+overlay，而那層 overlay 是 `SharedTransitionLayout` 自己的範圍。放進 `Scaffold` 的內容裡，
+overlay 就只剩「扣掉 bar 之後」那一塊；而文章那一端的容器**是整個螢幕**，卡片飛過去的
+路徑會經過 bar 所在的那條帶子。所以順序是 `SharedTransitionLayout` → `Scaffold` → `NavDisplay`。
+overlay 因此畫在 bar 之上，長大的文章會蓋過 bar，而不是滑到它底下。
+
+**bar 在不在，讀 back stack，不傳旗標** —— 文章沒有 bar（第 34 則），
+而「現在是不是文章」堆疊上早就寫著了：**文章是唯一一個「疊在某個目的地上面」而不是
+「取代某個目的地」的 key**。所以
+
+- `showsTheBar()` 看最上面那個 key 是不是兩個目的地之一；
+- `destination()` 從上往下找第一個目的地——**不是只看最上面**，因為 bar 在滑走的那段
+  時間裡，最上面那個正是文章，而它得繼續說得出讀者在哪裡。
+
+畫面一個旗標都沒有多收。多收一個旗標的問題不是麻煩，是**它會跟堆疊講不一樣的話**，
+而真的那一份是堆疊。
+
+**bar 會自己動：滑進滑出，不是瞬間消失** —— `AnimatedVisibility` ＋
+`slideInVertically`／`slideOutVertically`。理由有兩個：
+
+1. **點下卡片的那一幀就讓 bar 消失，會是整段轉場裡最吵的東西。** 那時候卡片還是卡片大小，
+   容器轉場才剛開始；一個閃掉的東西比一個長大的矩形更抓眼睛，而讀者該跟著看的是後者。
+2. **滑動不改變它被量到的高度**，所以整段離場期間 bar 的位置都還被保留著，
+   底下的清單不會在讀者看得到的時候重新排版。版面真正改變的那一瞬間是 bar 已經整個離場，
+   而那時候文章自己那層不透明的矩形（第 38 則）已經是整個畫面。
+
+換句話說：**動畫不是裝飾，它是讓 layout 的那一次跳變發生在看不見的時候。**
+
+**inset 只付一次** —— 這是搬動這條 bar 最容易搞砸的地方。付款表：
+
+| inset | 誰付 |
+|---|---|
+| 狀態列 | `CenterAlignedTopAppBar` 自己（Reading／Saved）；`DetailScreen` 自己（文章，第 34 則） |
+| 導覽列 | `DestinationBar` 自己的 `windowInsetsPadding`——所以它「量到的高度」本來就含了導覽列；外層 `Scaffold` 把那個高度扣給 `NavDisplay` |
+| 左右 | `Screen` 那層 `Scaffold` |
+
+因此兩個 `Scaffold` 都改了 `contentWindowInsets`：
+
+- **外層設 0。** 預設是 `systemBars`，那樣「沒有 bar 的時候」它會自己補一段狀態列與導覽列
+  的 inset——文章就再也貼不到螢幕邊，第 34 則整則會被這一行推翻。
+- **內層 `Screen` 只留左右。** 它原本靠「bottomBar 存在」把導覽列吃掉；bar 搬走之後，
+  預設的 `systemBars` 會讓它**再付一次**導覽列——外層已經給了含導覽列的 bar 高度，
+  清單底下就會多出一條空隙。這正是 edge-to-edge 指南講的重複付款。
+
+**當時還考慮**
+
+- **傳一個 `hasBar: Boolean` 給 `Mosaic` 或每個 entry。** 見上：兩份真相，而其中一份是抄的。
+- **不做動畫，`if (showsTheBar()) DestinationBar(...)`。** 最小的改法，也是最吵的：
+  bar 會在容器還是卡片大小的時候憑空不見，而且清單同一幀變高。
+- **用 `shrinkVertically()` 讓高度跟著動，清單平滑地長進那塊空間。** 沒選：
+  那讓底下的清單在整段轉場裡**一直在重新排版**，而第 33 則的立場是同一時間只該有一層在動。
+  滑動把那次跳變壓縮成一瞬間，並且藏在文章底下。
+- **bar 放在 `SharedTransitionLayout` 外面（`MainActivity` 或 `Mosaic` 的最外層 Column）。**
+  那樣 bar 會畫在 shared element 的 overlay **之上**，長大中的文章會滑到 bar 底下，
+  等於宣告那個矩形不是整個畫面。
+- **讓 pill 的移動也做動畫。** 沒動：那是改畫面顯示的東西，不是這一則的題目。
+  現在切換的瞬間 pill 直接換位，跟原本「整條 bar 換一份」看到的東西一樣多。
+
+**取捨與限制**
+
+- **一樣沒有機器驗證。** 有測試的只有「bar 在不在、亮的是哪一個」這個讀取
+  （`BackStackTest`，`:navigation` 的第一批測試）。**bar 滑走的時機跟文章長大的時機
+  對不對得上、清單有沒有在看得見的時候跳一下、橫向 inset 在有瀏海的機器上落在哪裡**，
+  全部只有裝置能回答。這個專案沒有截圖測試。
+- **兩條 bar 的動畫曲線沒有對齊過。** `AnimatedVisibility` 用的是 slide 的預設 spring，
+  `NavDisplay` 的轉場用的是它自己的規格。看起來合不合，同樣只有裝置說了算。
+- **`Screen` 從此只有一個入口。** 第 34 則的 `EdgeToEdgeScreen` 在第 38 則已經刪掉，
+  這一則之後 `Screen` 連 `bar` 參數都沒有了——它就是「頂欄 ＋ 內容」，沒有別的模式。
