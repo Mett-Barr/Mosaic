@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +49,7 @@ import moozy.mosaic.domain.model.ArticleId
 fun SavedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
     viewModel: SavedViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -56,30 +58,40 @@ fun SavedScreen(
         onOpenArticle = onOpenArticle,
         onLetGo = viewModel::letGo,
         modifier = modifier,
+        bottomInset = bottomInset,
     )
 }
 
+/**
+ * [bottomInset] is how much of the bottom edge something above this screen covers.
+ * This screen reaches the display's edge and is told the number, because a list
+ * that stops short of the bar cannot scroll behind it -- so the list spends it on
+ * `contentPadding`, where the clearance travels with the last card, and the empty
+ * state spends it as padding, having nothing to scroll.
+ */
 @Composable
 fun SavedScreen(
     state: SavedUiState,
     onOpenArticle: (ArticleId) -> Unit,
     onLetGo: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
 ) {
     // Two branches because [SavedUiState] has two answers, and each one names
     // what it draws rather than describing it in place.
     when (state) {
-        SavedUiState.Empty -> EmptyState(modifier)
+        SavedUiState.Empty -> EmptyState(bottomInset, modifier)
 
-        is SavedUiState.Content -> SavedList(state, onOpenArticle, onLetGo, modifier)
+        is SavedUiState.Content ->
+            SavedList(state, onOpenArticle, onLetGo, bottomInset, modifier)
     }
 }
 
 /** Nothing kept yet, and what keeping something is for. */
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(bottomInset: Dp, modifier: Modifier = Modifier) {
     Box(
-        modifier.fillMaxSize().padding(24.dp),
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -97,11 +109,20 @@ private fun SavedList(
     state: SavedUiState.Content,
     onOpenArticle: (ArticleId) -> Unit,
     onLetGo: (ArticleId) -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        // The bar's height is added to the bottom rather than padded around the
+        // list, so the last card scrolls out from under the bar instead of
+        // stopping at a border the reader cannot see past.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 12.dp,
+            end = 16.dp,
+            bottom = 12.dp + bottomInset,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Standing rather than conditional: this screen cannot tell whether
@@ -240,6 +261,12 @@ private val PreviewKept = SavedUiState.Content(
 )
 
 /**
+ * Nothing covers the bottom of a preview: there is no bar above it, so the
+ * clearance the real screen is handed is zero here rather than a guess at it.
+ */
+private val NoBar = 0.dp
+
+/**
  * One theme: a centred paragraph of `onSurfaceVariant`, which is the pairing
  * [SavedListPreviews] already holds up to both schemes.
  */
@@ -247,7 +274,7 @@ private val PreviewKept = SavedUiState.Content(
 @Composable
 private fun EmptyStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
+        Surface(color = MaterialTheme.colorScheme.background) { EmptyState(NoBar) }
     }
 }
 
@@ -268,7 +295,12 @@ private fun EmptyStatePreview() {
 private fun SavedListPreviews() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            SavedList(state = PreviewKept, onOpenArticle = {}, onLetGo = {})
+            SavedList(
+                state = PreviewKept,
+                onOpenArticle = {},
+                onLetGo = {},
+                bottomInset = NoBar,
+            )
         }
     }
 }

@@ -1803,3 +1803,134 @@ later in the frame."* `graphicsLayer` 的 block 正好就是「這一幀稍後�
 - **角的來源從此有兩個。** 卡片的 20dp 在 `:core:ui` 寫死，縮圖的角走主題的
   `shapes.medium`。這是刻意的：卡片的角是轉場的一端，必須跟另一端對齊；
   縮圖的角不是任何一端，它就是設計稿給一張內縮小圖的角。
+
+---
+
+## 45. `NavDisplay` 不再被扣掉 bar 的高度，底部那一段改由清單自己付
+
+**症狀** —— 點一張卡片，長大的矩形**分兩段**：先長到 bar 的上緣停住，bar 滑走，
+然後才補完剩下那一段到畫面底。應該是一個連續的動作。
+
+**根因** —— 第 42 則把 `Scaffold` 搬到 `NavDisplay` 外面的時候，順手把它量到的 `padding`
+也交給了 `NavDisplay`：
+
+```kotlin
+Scaffold(bottomBar = { /* ... */ }) { padding ->
+    NavDisplay(modifier = Modifier.padding(padding), ...)
+}
+```
+
+`NavDisplay` 因此是「畫面**減掉** bar」。文章那一端的容器 `fillMaxSize()`，量到的就是那塊
+已經被扣過的矩形——所以 shared element 的目標 bounds 是 bar 的上緣，不是畫面底。
+要等 bar 整個離場、`padding` 掉成 0，`NavDisplay` 才長高，容器跟著再長第二次。
+
+**Google 自己的 recipe 就是把那個 padding 丟掉** —— `android/nav3-recipes` 的
+`commonui/CommonUiActivity.kt`，整個 repo 裡唯一一個「底部 bar ＋ `NavDisplay`」的範例：
+
+```kotlin
+Scaffold(
+    bottomBar = { NavigationBar { ... } }
+) { _ ->
+    NavDisplay(
+        backStack = topLevelBackStack.backStack,
+        onBack = { topLevelBackStack.removeLast() },
+        entryProvider = entryProvider { ... }
+    )
+}
+```
+
+內距那個參數直接寫成 `_`。
+
+**但同一個 repo 裡的 recipes 對這件事並不一致，這點要講清楚** ——
+`scenes/listdetail/ListDetailActivity.kt` 反過來寫 `NavDisplay(modifier = Modifier.padding(paddingValues))`；
+不過它那個 `Scaffold` **沒有 bottomBar**，扣掉的只有 window inset，跟這裡的題目不是同一件事。
+`animations`、`material/listdetail`、`material/supportingpane`、`scenes/twopane` 四個
+recipe 連 `Scaffold` 都沒有，`NavDisplay` 直接在最外層。所以真正對得上本專案版面的只有
+`commonui` 一個。
+
+還有一件更該說的：`commonui` 的內容 (`content/Content.kt` 的 `ContentBase`) 只付
+`safeDrawingPadding()`——**只付系統列，不付它自己那條 `NavigationBar` 的高度**，
+它的內容其實是壓在 bar 底下、拿不回來的。那個 recipe 示範的是**結構**，不是 inset 的付法。
+所以下面那張付款表是本專案自己算的，不是抄它的。
+
+**選了** —— `NavDisplay` 不接 `padding`，整個內容區都是它的；bar 的高度改成一個數字往下傳，
+由用得到它的那一段自己付：
+
+```kotlin
+) { padding ->
+    val underTheBar = padding.calculateBottomPadding()
+    NavDisplay(backStack = backStack, ...)   // 沒有 modifier
+}
+```
+
+`FeedScreen` 與 `SavedScreen` 各多一個 `bottomInset: Dp`。
+
+**為什麼是 `contentPadding` 而不是 padding 父層** —— 官方 edge-to-edge 指南對這一段的答案
+是交給 scrollable 的 `contentPadding`：padding 父層會讓清單在 bar 的上緣就被裁掉，
+最後一張卡片永遠捲不出來；`contentPadding` 則是讓清單鋪到畫面底、內容從 bar 底下捲過去，
+而那段淨空跟著最後一張卡片一起捲走。第 34 則對文章的捲動內容已經下過同一個判斷，
+這一則只是把它套到另外兩個畫面。
+
+**不捲的那幾個狀態付一樣的錢，但付法不同** —— Loading／Empty／Failed 是置中的一塊東西，
+底下沒有東西要捲到 bar 後面，所以它們用 `padding(bottom = bottomInset)`。同一個數字，
+兩種花法，判準是「這一段底下有沒有東西要捲過去」。
+
+**這不是第 42 則禁掉的那種旗標** —— 42 則不准畫面多收一個 `hasBar: Boolean`，理由是那會
+變成第二份真相，而且可能跟堆疊講不一樣的話。`bottomInset` 不是那種東西：它是**唯一量得到
+bar 的那一層量完之後把數字交下來**，畫面沒有第二個來源可以跟它矛盾。而且 feature 也沒有
+因此知道底下那個東西是 bar——它只知道「底部有 X dp 被蓋住」。
+
+**inset 只付一次**（這張表取代第 42 則那張，但不改寫它）：
+
+| inset | 誰付 |
+|---|---|
+| 狀態列 | `CenterAlignedTopAppBar` 自己（Reading／Saved）；`DetailScreen` 自己（文章，第 34 則） |
+| 導覽列 | Reading／Saved：`DestinationBar` 自己的 `windowInsetsPadding`——它「量到的高度」本來就含了導覽列；文章：`DetailScreen` 在 `verticalScroll` 之內的 `navigationBarsPadding()` |
+| bar 的高度 | Reading／Saved 的清單自己，付在 `contentPadding.bottom`；三個不捲的狀態付在 `padding(bottom =)`。**沒有人再從 `NavDisplay` 扣它** |
+| 左右 | `Screen` 那層 `Scaffold`（`systemBars.only(Horizontal)`）；文章一分不付（第 34 則） |
+
+兩個 `Scaffold` 的 `contentWindowInsets` 都沒有動。外層仍然是 0——它的作用變了：現在是
+「量到的那個數字就是 bar 的高度，一分不多」，而文章在場時它是 0。`Screen` 仍然只留左右：
+外層不再扣底部之後，`Screen` 若退回預設的 `systemBars`，清單底下就會再付一次導覽列。
+
+**怎麼看到的** —— 兩件事分開量，因為它們的證據強度不一樣。
+
+1. **幾何確定變了，這一項有決定性的畫面。** 臨時把 `DestinationBar` 的 `Surface` 調成
+   `alpha = 0.25f` 建了兩個丟棄用的 build，各截一張靜止的 feed：
+   **接回 `padding` 的那個**，bar 後面什麼都沒有，頭條卡片的照片在 y=2127（bar 的上緣）
+   齊平切斷；**丟掉 `padding` 的那個**，同一張照片從 bar 後面一路長到 y=2400 的螢幕下緣。
+   兩張圖差的正是那 273px。診斷用的改動沒有進 commit。
+2. **轉場那一段，模擬器沒有把症狀重現出來，所以不能說「看到它被修好」。**
+   `animator_duration_scale` 等三個都調成 10，`screenrecord` 錄 feed→文章，
+   改前改後各錄一次（同一顆冷開機的模擬器、同一篇文章、同一個點擊座標），30fps 抽幀。
+   **改後那份看不到停頓**：矩形一路長到螢幕下緣，沒有哪一幀是它停在 bar 上緣等著。
+   但**改前那份也看不到停頓**——這台模擬器實際只錄得到 7～8 個不重複的畫格，
+   而 bar 的離場在一個畫格之內就結束了，`padding` 因此在容器開始長大之前就已經是 0。
+   換句話說：症狀要成立，得是 bar 的滑動與容器的長大真的重疊；裝置上會，這台模擬器不會。
+
+**當時還考慮**
+
+- **把 bar 從 `Scaffold` 拿掉，改成 `Box { NavDisplay(); DestinationBar(Alignment.BottomCenter) }`。**
+  這樣 `NavDisplay` 一定是整個畫面。沒選：bar 的高度就沒有人量了，`bottomInset` 得改成寫死的
+  dp 或自己 `onSizeChanged` 量一次——而 `Scaffold` 本來就在量，多寫一套是把既有的東西再做一遍。
+- **只扣頂部與左右，底部不扣（`padding(top =, start =, end =)`）。** 外層 `Scaffold` 沒有
+  topBar，那三個值本來就是 0，等於把 `padding` 拆開再丟掉，多一行字、少一分誠實。
+- **讓文章那一端自己想辦法長到 window 而不是長到父層**（`wrapContentSize(unbounded = true)`，
+  或改用 `Popup`）。那是讓一個畫面自己逃出被給錯的框，而框給錯了才是題目。
+- **把 bar 的高度寫死成一個 dp 常數。** 它含導覽列，而導覽列在手勢與三鍵兩種模式下不一樣高，
+  寫死等於在其中一種上是錯的。
+- **把 `Screen` 頂部那段也改成 `contentPadding`，讓清單也從頂欄底下捲過去。** 沒做：
+  這一則的題目在底部，而動了頂部就會動到卡片在清單裡的位置，也就動到 shared element
+  出發的那個矩形。要改是另一則的事。
+
+**取捨與限制**
+
+- **底部那次 layout 跳變還在，只是換了東西在跳。** bar 整個離場的那一幀，`padding` 掉成 0，
+  清單的 `contentPadding` 少掉 bar 的高度、重排一次。第 42 則說這一跳被藏在文章的不透明
+  矩形底下，那句話仍然成立——只是**現在跳的是 `contentPadding`，不是整個清單的高度**；
+  清單的高度從頭到尾都是整個畫面。
+- **一樣沒有機器驗證。** `build detekt lint` 全綠只證明它會編譯。這個專案沒有截圖測試，
+  上面「怎麼看到的」第 1 項那兩張圖是手動截的、用完即丟。
+- **清單現在真的畫在 bar 底下了。** `DestinationBar` 是不透明的 `surfaceContainer`，所以看
+  不出來——但這是一條新的相依：哪天那條 bar 變成半透明或 blur，底下就會有東西透出來，
+  而那是設計要不要的問題，不是 bug。

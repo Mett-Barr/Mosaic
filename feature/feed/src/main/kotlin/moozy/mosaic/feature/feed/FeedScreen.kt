@@ -39,6 +39,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -77,6 +78,7 @@ import moozy.mosaic.domain.model.Sky
 fun FeedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
     val stories = viewModel.stories.collectAsLazyPagingItems()
@@ -89,6 +91,7 @@ fun FeedScreen(
         onRefresh = viewModel::refresh,
         onOpenArticle = onOpenArticle,
         modifier = modifier,
+        bottomInset = bottomInset,
     )
 }
 
@@ -100,6 +103,15 @@ fun FeedScreen(
  * The phase is worked out by [feedPhase] rather than held anywhere. Nothing in
  * this file decides which screen this is -- that decision has tests, and a
  * decision made inside a composable would not.
+ *
+ * [bottomInset] is how much of the bottom edge something above this screen covers.
+ * This screen reaches the display's edge and is told the number rather than being
+ * measured smaller, because a list that stops short of the bar cannot scroll
+ * behind it -- and the four things drawn here spend it two different ways. The
+ * list spends it on `contentPadding`, so the clearance travels with the last card
+ * instead of standing there as a margin; the three states that only centre one
+ * thing spend it as padding, because nothing in them scrolls and there is nothing
+ * to keep reachable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +122,7 @@ fun FeedScreen(
     onRefresh: () -> Unit,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
 ) {
     // The gesture belongs to the whole screen, not only the list: a reader who
     // pulls an "you are offline" screen down is asking the same question.
@@ -125,29 +138,40 @@ fun FeedScreen(
         // a `when` down here where nothing in this project could check it. Each
         // branch names what it draws, so the phase and the picture read alike.
         when (val phase = feedPhase(stories.loadState, stories.itemCount)) {
-            FeedPhase.Loading -> LoadingState()
+            FeedPhase.Loading -> LoadingState(bottomInset = bottomInset)
 
-            FeedPhase.Empty -> EmptyState()
+            FeedPhase.Empty -> EmptyState(bottomInset = bottomInset)
 
-            is FeedPhase.Failed -> FailedState(phase = phase, onRetry = stories::retry)
+            is FeedPhase.Failed -> FailedState(
+                phase = phase,
+                onRetry = stories::retry,
+                bottomInset = bottomInset,
+            )
 
-            FeedPhase.Ready -> ArticleList(stories, weather, movies, onOpenArticle)
+            FeedPhase.Ready ->
+                ArticleList(stories, weather, movies, onOpenArticle, bottomInset = bottomInset)
         }
     }
 }
 
 /** Nothing to show yet, and a reason to wait. */
 @Composable
-private fun LoadingState(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+private fun LoadingState(bottomInset: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         CircularProgressIndicator()
     }
 }
 
 /** The feed answered and there was genuinely nothing in it. */
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+private fun EmptyState(bottomInset: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             "No articles yet.",
             style = MaterialTheme.typography.bodyLarge,
@@ -167,9 +191,13 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun FailedState(
     phase: FeedPhase.Failed,
     onRetry: () -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Notice(
             icon = if (phase.offline) Icons.Filled.CloudOff else Icons.Outlined.ErrorOutline,
             message = phase.message,
@@ -185,6 +213,7 @@ private fun ArticleList(
     weather: WeatherHeadline?,
     movies: ImmutableList<MoviePoster>,
     onOpenArticle: (ArticleId) -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -196,7 +225,15 @@ private fun ArticleList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        // The bar's height is added to the bottom rather than padded around the
+        // list, so the last card scrolls out from under the bar instead of
+        // stopping at a border the reader cannot see past.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 12.dp,
+            end = 16.dp,
+            bottom = 12.dp + bottomInset,
+        ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         weather?.let { reading ->
@@ -580,12 +617,18 @@ private class FeedFailures : PreviewParameterProvider<FeedPhase.Failed> {
     }
 }
 
+/**
+ * Nothing covers the bottom of a preview: there is no bar above it, so the
+ * clearance the real screen is handed is zero here rather than a guess at it.
+ */
+private val NoBar = 0.dp
+
 /** One arc in the primary colour. There is nothing here a second theme would show. */
 @Preview
 @Composable
 private fun LoadingStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { LoadingState() }
+        Surface(color = MaterialTheme.colorScheme.background) { LoadingState(NoBar) }
     }
 }
 
@@ -597,7 +640,7 @@ private fun LoadingStatePreview() {
 @Composable
 private fun EmptyStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
+        Surface(color = MaterialTheme.colorScheme.background) { EmptyState(NoBar) }
     }
 }
 
@@ -609,7 +652,7 @@ private fun FailedStatePreview(
 ) {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            FailedState(phase = phase, onRetry = {})
+            FailedState(phase = phase, onRetry = {}, bottomInset = NoBar)
         }
     }
 }
@@ -637,6 +680,7 @@ private fun ArticleListPreviews() {
                 weather = PreviewWeather,
                 movies = PreviewFilms,
                 onOpenArticle = {},
+                bottomInset = NoBar,
             )
         }
     }
@@ -665,6 +709,7 @@ private fun ArticleListWithoutFilmsPreview() {
                 weather = PreviewWeather,
                 movies = persistentListOf(),
                 onOpenArticle = {},
+                bottomInset = NoBar,
             )
         }
     }

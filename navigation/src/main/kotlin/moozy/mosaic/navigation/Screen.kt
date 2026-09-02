@@ -42,11 +42,12 @@ internal fun Screen(
         containerColor = MaterialTheme.colorScheme.background,
         // The sides, and only the sides. Every inset is paid once and this frame
         // owns one of the three: the top is the app bar's, which pads itself for
-        // the status bar, and the bottom is the destination bar's, which is
-        // measured a level up and already subtracted from everything in here. Left
-        // at its default, this Scaffold would hand the list a second navigation-bar
-        // inset on top of the bar's own height, which is the gap that double
-        // payment looks like.
+        // the status bar, and the bottom belongs to whatever scrolls in here --
+        // the destination bar's height is measured a level up and handed to the
+        // screen as a number, not subtracted from this frame, so that a list can
+        // reach the display's edge and scroll behind the bar (DECISIONS.md 45).
+        // Left at its default, this Scaffold would pay the navigation bar a second
+        // time on top of that number, which is the gap double payment looks like.
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
         topBar = {
             CenterAlignedTopAppBar(

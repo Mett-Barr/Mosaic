@@ -52,11 +52,11 @@ fun Mosaic(modifier: Modifier = Modifier) {
     SharedTransitionLayout(modifier) {
         val moving = this
         Scaffold(
-            // Nothing is subtracted here. Each destination still stands in a frame
-            // that pays for the top and the sides (`Screen`), and the article is
-            // handed every edge on purpose (DECISIONS.md 34). The one inset this
-            // Scaffold owns is the bar's own height below -- which already contains
-            // the navigation bar's, because the bar pads itself for it.
+            // Zero, so that what this Scaffold measures below is the bar's height
+            // and nothing else -- and zero when there is no bar, which is the case
+            // the article needs (DECISIONS.md 34). Left at its default, `systemBars`
+            // would fold the navigation bar's inset into that number a second time;
+            // the bar already contains it, because the bar pads itself for it.
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 // Whether the bar belongs on screen is a question about the back
@@ -85,11 +85,18 @@ fun Mosaic(modifier: Modifier = Modifier) {
                 }
             },
         ) { padding ->
+            // The bar's height, measured here and spent further down rather than
+            // subtracted here. Subtracting it is what made an article open in two
+            // movements: `NavDisplay` was then the display minus the bar, so the
+            // rectangle the card grows into reached *that* edge, waited for the bar
+            // to finish sliding, and only then grew the rest of the way. The
+            // article's target has to be the whole display from the first frame, so
+            // this padding is not applied to `NavDisplay` at all. Google's own
+            // Navigation 3 recipe for this layout does the same thing with it --
+            // `nav3-recipes`, `commonui/CommonUiActivity.kt` names the content
+            // lambda's parameter `_`. See DECISIONS.md 45.
+            val underTheBar = padding.calculateBottomPadding()
             NavDisplay(
-                // The bar's height, and nothing else. Paid once, here, for whichever
-                // destination is on top -- and zero while an article is, because
-                // then there is no bar to pay for.
-                modifier = Modifier.padding(padding),
                 backStack = backStack,
                 sharedTransitionScope = moving,
                 onBack = { backStack.removeLastOrNull() },
@@ -112,12 +119,19 @@ fun Mosaic(modifier: Modifier = Modifier) {
                             sharedTransitionScope = moving,
                             animatedVisibilityScope = LocalNavAnimatedContentScope.current,
                         ) {
+                            // The frame pays the top and the sides as padding, because
+                            // the bar above is opaque and the list has to start below
+                            // it. The bottom is handed over as a number instead: down
+                            // there the list has to reach the display's edge and let
+                            // its last card scroll out from under the bar, which is
+                            // `contentPadding`'s job and not a parent's.
                             Screen(title = "Today") { insets ->
                                 FeedScreen(
                                     onOpenArticle = { id ->
                                         backStack.goTo(ArticleKey(id.value, CardOrigin.READING))
                                     },
                                     modifier = Modifier.padding(insets),
+                                    bottomInset = underTheBar,
                                 )
                             }
                         }
@@ -136,6 +150,7 @@ fun Mosaic(modifier: Modifier = Modifier) {
                                         backStack.goTo(ArticleKey(id.value, CardOrigin.SAVED))
                                     },
                                     modifier = Modifier.padding(insets),
+                                    bottomInset = underTheBar,
                                 )
                             }
                         }
