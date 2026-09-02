@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
+import java.util.Locale
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import moozy.mosaic.core.ui.readableTime
@@ -19,6 +20,8 @@ import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
 import moozy.mosaic.domain.model.FeedFailure
 import moozy.mosaic.domain.model.ForecastDay
+import moozy.mosaic.domain.model.Movie
+import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.Sky
 import moozy.mosaic.domain.model.Weather
 
@@ -83,6 +86,44 @@ data class DayHeadline(
     val temperature: String,
     val sky: Sky,
 )
+
+/**
+ * The third kind of cell, as words.
+ *
+ * [rating] is a String and nullable, which is the whole of what this type adds
+ * over the domain's [Movie]: the source sends 8.117, a reader is shown "8.1", and
+ * a film nobody has voted on is shown no badge at all rather than a zero. Both of
+ * those are decisions about this screen, and both are assertable here.
+ *
+ * [id] stays the domain's type for the reason [ArticleRow.id] does -- it is not
+ * shown, it is what keeps a poster the same poster while the strip scrolls.
+ */
+@Immutable
+data class MoviePoster(
+    val id: MovieId,
+    val title: String,
+    val rating: String?,
+    val posterUrl: String?,
+)
+
+internal fun Movie.poster() = MoviePoster(
+    id = id,
+    title = title,
+    rating = rating?.let { readableRating(it) },
+    posterUrl = posterUrl,
+)
+
+/**
+ * A score as a person reads it: `8.117` becomes `8.1`.
+ *
+ * One decimal because that is what TMDB's own site shows and because the third
+ * digit is a claim about a film that nobody is making. [Locale.ENGLISH]
+ * explicitly, the same rule `ReadableTime` settled for the same reason: leaving
+ * it to the device turns the separator into a comma on a European phone, in the
+ * middle of an otherwise English card.
+ */
+private fun readableRating(rating: Double): String =
+    String.format(Locale.ENGLISH, "%.1f", rating)
 
 internal fun ArticleItem.row() = ArticleRow(
     id = id,

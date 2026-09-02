@@ -50,6 +50,7 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
+import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
@@ -61,6 +62,7 @@ import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.Sky
 
 /**
@@ -78,9 +80,11 @@ fun FeedScreen(
 ) {
     val stories = viewModel.stories.collectAsLazyPagingItems()
     val weather by viewModel.weather.collectAsStateWithLifecycle()
+    val movies by viewModel.movies.collectAsStateWithLifecycle()
     FeedScreen(
         stories = stories,
         weather = weather,
+        movies = movies,
         onRefresh = viewModel::refresh,
         onOpenArticle = onOpenArticle,
         modifier = modifier,
@@ -101,6 +105,7 @@ fun FeedScreen(
 fun FeedScreen(
     stories: LazyPagingItems<ArticleRow>,
     weather: WeatherHeadline?,
+    movies: ImmutableList<MoviePoster>,
     onRefresh: () -> Unit,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
@@ -125,7 +130,7 @@ fun FeedScreen(
 
             is FeedPhase.Failed -> FailedState(phase = phase, onRetry = stories::retry)
 
-            FeedPhase.Ready -> ArticleList(stories, weather, onOpenArticle)
+            FeedPhase.Ready -> ArticleList(stories, weather, movies, onOpenArticle)
         }
     }
 }
@@ -177,6 +182,7 @@ private fun FailedState(
 private fun ArticleList(
     stories: LazyPagingItems<ArticleRow>,
     weather: WeatherHeadline?,
+    movies: ImmutableList<MoviePoster>,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -194,6 +200,15 @@ private fun ArticleList(
     ) {
         weather?.let { reading ->
             item(key = "weather") { WeatherCard(reading) }
+        }
+
+        // The guard is here rather than inside the strip, the same way the
+        // weather card's is: an item that draws nothing still takes the column's
+        // 14dp of spacing with it, and a feed holding a gap open for something
+        // absent reads as broken rather than as short. A build with no TMDB token
+        // arrives here as an empty list and this is where it disappears.
+        if (movies.isNotEmpty()) {
+            item(key = "movies") { MovieStrip(movies) }
         }
 
         if (stories.itemCount > 0) {
@@ -488,6 +503,27 @@ private val PreviewWeather = WeatherHeadline(
 )
 
 /**
+ * Two films, so the list preview shows the strip at the height it actually has.
+ *
+ * The strip's own previews live beside it, and so does the reasoning about why
+ * these carry no poster URLs.
+ */
+private val PreviewFilms = persistentListOf(
+    MoviePoster(
+        id = MovieId(1087192),
+        title = "How to Train Your Dragon",
+        rating = "8.1",
+        posterUrl = null,
+    ),
+    MoviePoster(
+        id = MovieId(1233413),
+        title = "A Title Long Enough That It Has To Stop Somewhere",
+        rating = "7.9",
+        posterUrl = null,
+    ),
+)
+
+/**
  * The stories as Paging would hand them over.
  *
  * [LazyPagingItems] cannot be constructed, so a preview of [ArticleList] goes the
@@ -579,11 +615,13 @@ private fun FailedStatePreview(
 }
 
 /**
- * The list in both themes, weather card included.
+ * The list in both themes, all three sources included.
  *
  * The one preview in this file worth two renders, because this is where the
- * palette is: the card's green gradient, the raised story surfaces, and body text
- * on a page that is not white in either scheme.
+ * palette is: the card's green gradient, the raised story surfaces, the posters'
+ * grey tiles, and body text on a page that is not white in either scheme. It is
+ * also the only render that shows the three shapes stacked -- a wide gradient,
+ * a row that moves sideways, and a column of stories.
  */
 @PreviewLightDark
 @Composable
@@ -597,6 +635,35 @@ private fun ArticleListPreviews() {
             ArticleList(
                 stories = stories.collectAsLazyPagingItems(),
                 weather = PreviewWeather,
+                movies = PreviewFilms,
+                onOpenArticle = {},
+            )
+        }
+    }
+}
+
+/**
+ * The same feed with no films in it.
+ *
+ * This is the strip's empty case, and it is a preview of the list rather than of
+ * the strip because that is where the emptiness is decided: [MovieStrip] is never
+ * called with nothing, the item is simply not emitted. What has to be checked by
+ * eye is that the weather card and "Top Stories" close up against each other with
+ * no extra gap where the posters were.
+ *
+ * It is also what a clean checkout looks like. Without a TMDB token the app is
+ * this, and this has to look deliberate rather than like something failed to load.
+ */
+@Preview
+@Composable
+private fun ArticleListWithoutFilmsPreview() {
+    val stories = remember { MutableStateFlow(PreviewPaging) }
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ArticleList(
+                stories = stories.collectAsLazyPagingItems(),
+                weather = PreviewWeather,
+                movies = persistentListOf(),
                 onOpenArticle = {},
             )
         }

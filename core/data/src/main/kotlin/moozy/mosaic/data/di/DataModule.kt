@@ -13,13 +13,20 @@ import androidx.core.content.getSystemService
 import androidx.room.Room
 import java.io.File
 import java.time.Instant
+import java.time.ZoneId
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import moozy.mosaic.data.BuildConfig
 import moozy.mosaic.data.article.SavedFirstArticleRepository
 import moozy.mosaic.data.article.network.SpaceflightNewsApi
 import moozy.mosaic.data.article.network.spaceflightNewsClient
+import moozy.mosaic.data.movie.FileTrendingStore
+import moozy.mosaic.data.movie.NoMovies
+import moozy.mosaic.data.movie.TmdbApi
+import moozy.mosaic.data.movie.TmdbTrending
+import moozy.mosaic.data.movie.tmdbClient
 import moozy.mosaic.data.saved.ImportSavedArticles
 import moozy.mosaic.data.saved.RoomSavedArticles
 import moozy.mosaic.data.saved.SavedArticleDao
@@ -31,6 +38,7 @@ import moozy.mosaic.data.weather.Place
 import moozy.mosaic.data.weather.openMeteoClient
 import moozy.mosaic.domain.model.Clock
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.MovieRepository
 import moozy.mosaic.domain.repository.SavedArticles
 import moozy.mosaic.domain.repository.WeatherRepository
 
@@ -105,6 +113,41 @@ internal object DataModule {
             // was the reader's, which it is not.
             store = FileWeatherStore(File(context.cacheDir, "weather.json"), Dispatchers.IO),
         )
+
+    /**
+     * The third source, when this build has a key to ask it with.
+     *
+     * The one place the token's absence is decided. A checkout without one is
+     * ordinary rather than broken -- the assignment requires a single command to
+     * build from clean, and a token cannot be committed -- so a blank field
+     * builds [NoMovies] and no TMDB request is ever made. The screen has one case
+     * to draw either way: nothing, the same as a weather card with no reading.
+     *
+     * The zone is the device's, because the day this asks about is the reader's
+     * day. Nothing further down reads a clock or a calendar for itself.
+     */
+    @Provides
+    @Singleton
+    fun movieRepository(@ApplicationContext context: Context): MovieRepository {
+        val token = BuildConfig.TMDB_TOKEN
+        if (token.isBlank()) return NoMovies
+        return TmdbTrending(
+            api = TmdbApi(client = tmdbClient(OkHttp.create()), token = token),
+            clock = Clock { Instant.now() },
+            zone = ZoneId.systemDefault(),
+            // A scope that outlives every screen, for the reason the weather's
+            // does: the stream is shared by all of them and must not end when one
+            // of them does. The process ending is what ends it.
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            // cacheDir, beside the weather reading. A day's list is reproducible
+            // by asking again, so the system may reclaim it and all that is lost
+            // is one request -- which is exactly what the file was saving.
+            store = FileTrendingStore(
+                File(context.cacheDir, "trending-movies.json"),
+                Dispatchers.IO,
+            ),
+        )
+    }
 
     /**
      * The reading list lives in the app's own storage: it is the reader's, it is

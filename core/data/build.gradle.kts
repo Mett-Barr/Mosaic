@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -14,6 +15,21 @@ detekt {
     config.setFrom(rootProject.files("config/detekt/detekt.yml"))
 }
 
+// TMDB's v4 read access token, from local.properties -- which git ignores, and
+// which a clean checkout does not have. Absent it is the empty string: the build
+// must not fail over it (the assignment requires a checkout to build with one
+// command), and the data module reads the blank and wires up a repository that
+// asks for nothing. Trimmed because a token pasted into a properties file tends
+// to arrive with a space in front of it.
+//
+// This does put the token in the APK of a build that has one, which is true of
+// every client-side key and is not what keeping it out of the repository is for
+// (DECISIONS.md 40).
+val tmdbToken: String = Properties().apply {
+    val local = rootProject.file("local.properties")
+    if (local.exists()) local.inputStream().use { load(it) }
+}.getProperty("tmdb.token").orEmpty().trim()
+
 android {
     lint { lintConfig = rootProject.file("lint.xml") }
 
@@ -25,7 +41,15 @@ android {
     compileSdk = 37
     compileSdkMinor = 0
 
-    defaultConfig { minSdk = 24 }
+    // AGP 9 no longer generates BuildConfig unless asked. This module is the only
+    // one that needs it: the token belongs where the client that sends it lives,
+    // and putting it on :app would hand it to every module through the graph.
+    buildFeatures { buildConfig = true }
+
+    defaultConfig {
+        minSdk = 24
+        buildConfigField("String", "TMDB_TOKEN", "\"$tmdbToken\"")
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
