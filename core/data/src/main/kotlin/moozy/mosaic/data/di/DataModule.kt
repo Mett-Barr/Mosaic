@@ -70,18 +70,25 @@ internal object DataModule {
     /**
      * The source, and nothing between it and the feed.
      *
-     * There is no cache here on purpose. Pages already loaded stay in memory for
-     * as long as the screen's view model does, which covers rotation, the trip to
-     * an article and time in the background. What a file would add is the case
-     * where the process was killed -- and a list restored from disk cannot be
-     * handed to Paging as a starting point, so it would be shown and then
-     * replaced, which is a flicker rather than a feature.
+     * There is no cache on disk here on purpose. Pages already loaded stay in
+     * memory for as long as the screen's view model does, which covers rotation,
+     * the trip to an article and time in the background. What a file would add is
+     * the case where the process was killed -- and a list restored from disk
+     * cannot be handed to Paging as a starting point, so it would be shown and
+     * then replaced, which is a flicker rather than a feature.
      *
      * One article is the exception, and it is the repository's business rather
      * than a screen's: the table of kept articles is handed over here so that
      * "where does this article come from" is answered in one place. The dao does
      * not leave this module -- what the app asks for is still the interface
-     * `:core:domain` declared.
+     * `:core:domain` declared. The third source that question now has is the
+     * repository's own and needs nothing from here: it holds the page it just
+     * handed to the feed, in memory, for as long as that is the list on screen
+     * (DECISIONS.md 41).
+     *
+     * Which is why this stays a singleton. Two repositories would be two lists
+     * remembered separately, and the one the article screen asked would be the
+     * one the feed had not filled.
      */
     @Provides
     @Singleton
