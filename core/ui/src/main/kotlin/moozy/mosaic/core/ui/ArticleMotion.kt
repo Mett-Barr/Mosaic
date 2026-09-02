@@ -3,6 +3,8 @@ package moozy.mosaic.core.ui
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
@@ -174,11 +176,19 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
  *
  * [SharedTransitionScope.sharedBounds] already defaults `enter` and `exit` to
  * these two, and the container transform in the Compose documentation passes them
- * anyway. So does this, for the reason that example does: **this** is the only
- * cross-fade in the transition. The screens themselves no longer fade past each
- * other (see `CardBecomesArticle` in `:navigation`), so the one place a card's
- * contents become an article's contents is inside the rectangle carrying them,
- * and it should be readable here rather than inherited from a default.
+ * anyway. So does this, for the reason that example does: **this** is the one
+ * place a card's contents become an article's contents, and it should be readable
+ * here rather than inherited from a default. The screens themselves no longer
+ * fade past each other (see `CardBecomesArticle` in `:navigation`), so this
+ * rectangle is where the crossing happens.
+ *
+ * **It is the only cross-fade, and staying that way takes saying so.** Every
+ * `sharedBounds` nested inside this one defaults to the same pair, and a default
+ * that is live only while a match is found is a fade that appears exactly when
+ * this one does -- three alphas over the same words. So the parts that travel
+ * inside this rectangle pass `EnterTransition.None`/`ExitTransition.None`
+ * ([sharedArticleTitle], [sharedArticleAttribution]) and let this one carry the
+ * crossing for all of them.
  *
  * A caller puts its size modifiers *after* this one. That is what the Compose
  * documentation asks for -- *"Place size modifiers after the shared element
@@ -304,6 +314,16 @@ private fun Modifier.ownCorners(at: PictureSeat): Modifier =
  * element would re-flow the text mid-flight. [ResizeMode.scaleToBounds] measures
  * it once at the size it is going to be and scales that, which is what the Compose
  * documentation recommends for text and is the reason this one is not [sharedElement].
+ *
+ * **It travels and it does not fade, and the two are separate decisions.**
+ * `sharedBounds` defaults `enter` and `exit` to `fadeIn()`/`fadeOut()`, live
+ * exactly while a match is found -- so leaving them alone put a third fade on
+ * these words. They already carry two: [sharedArticleCard]'s, because they sit
+ * inside it, and the article entry's own (`CardBecomesArticle` in `:navigation`).
+ * Three alphas multiply, and the title was arriving later and darker than the
+ * summary beside it, which fades twice because it is not a shared element at
+ * all. This is the same arithmetic DECISIONS.md 37 wrote down when it stopped
+ * the back arrow fading itself to nothing.
  */
 @Composable
 fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
@@ -312,6 +332,8 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
         this@sharedArticleTitle.sharedBounds(
             sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.TITLE)),
             animatedVisibilityScope = motion.visibility,
+            enter = EnterTransition.None,
+            exit = ExitTransition.None,
             boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )
@@ -332,6 +354,9 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
  * the source, so its line is a shorter one that happens to start with the same
  * word. Matching those two would measure one and scale it to the other's width,
  * which is a source name stretching as it flies (DECISIONS.md 39).
+ *
+ * No `enter` and no `exit`, for the reason [sharedArticleTitle] gives: the two
+ * fades already over this line are two more than it needs.
  */
 @Composable
 fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
@@ -342,6 +367,8 @@ fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
                 motion.key(id, ArticlePart.ATTRIBUTION),
             ),
             animatedVisibilityScope = motion.visibility,
+            enter = EnterTransition.None,
+            exit = ExitTransition.None,
             boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )

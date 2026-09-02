@@ -2006,3 +2006,58 @@ bar 的那一層量完之後把數字交下來**，畫面沒有第二個來源�
 - **`build detekt lint` 全綠只證明它會編譯。** 這個專案沒有截圖測試，
   動畫這一整族的結論全部沒有機器驗證——第 20、32、33、34、35、43、45 則都寫過同一句。
 - **feed 的 `Surface` 仍然自己畫靜止的 20dp**（第 35 則的最後一條限制），這一則沒有動它。
+
+---
+
+## 47. 標題被淡了三層，因為 `sharedBounds` 的 enter／exit 預設就是一層淡
+
+> **這一則把第 37 則的算術套到第 39 則加進來的那兩個 shared element 上。**
+> 37 則的結論——「這個畫面上已經有兩層淡，第三層會跟它們相乘」——一個字都沒有改，
+> 只是當時算的是返回箭頭，而同一份帳這裡沒有人算過。
+
+**症狀** —— 轉場錄下來抽幀，**標題在飛的時候明顯比它旁邊的摘要淡、而且到得比較晚**，
+像是重影。摘要不是 shared element，標題是。
+
+**根因** —— `sharedArticleTitle` 與 `sharedArticleAttribution` 呼叫 `sharedBounds` 時
+沒有給 `enter`／`exit`，所以拿到 library 的預設值，而那個預設值是
+`fadeIn()`／`fadeOut()`——不是「沒有」。而且它**配對到才會活**
+（`isEnabled = { sharedContentState.isMatchFound }`，第 37 則與第 43 則都引過這一行），
+所以它出現的時機正好就是轉場開始的那一刻。
+
+同一段文字上因此疊了三層 alpha：
+
+1. `CardBecomesArticle` 掛在 `NavDisplay.TransitionKey` 上的 `fadeIn()`（整個 scene）
+2. `sharedArticleCard` 自己的 `fadeIn()`／`fadeOut()`（整個容器子樹）
+3. 標題自己這一層（只有它與來源那一行）
+
+摘要在第 1 與第 2 層底下，兩層；標題三層。三個相乘的 alpha 在中段的值明顯低於兩個相乘，
+兩段文字因此不同步。**`sharedArticleCard` 的 KDoc 當時還寫著「這是整個轉場裡唯一的一次
+cross-fade」**——那句話從第 39 則把這兩個 modifier 加進來的那一刻起就不成立了。
+
+**選了** —— 兩個都明寫 `enter = EnterTransition.None, exit = ExitTransition.None`，
+淡由 `sharedArticleCard` 那一層負責，並把 KDoc 那句話改成做得到的版本：
+它仍然是唯一的 cross-fade，但**維持這件事需要每一個巢在裡面的 `sharedBounds` 都說一次**。
+
+**為什麼不是反過來，把容器那一層拿掉** —— 容器那一層才是 container transform 圖案裡
+「內容互換」的那一次淡（第 33 則），而且它蓋得住整個子樹，包含不是 shared element 的
+摘要與那顆返回箭頭。留下範圍最大的那一層、拿掉範圍最小的那兩層，是唯一能讓
+「所有內容一起淡」成立的組合。
+
+**當時還考慮**
+
+- **讓標題與摘要都變成 shared element，這樣兩邊層數就一樣了。** 那是第 39 則
+  明確拒絕過的方向：Saved 那一端沒有同一行字，配對會把來源名稱拉長。而且「一起變差」
+  不是對齊。
+- **把三層裡的第 1 層（scene 的 `fadeIn`）拿掉。** 那是第 38 則之後文章唯一的不透明來源，
+  拿掉會讓文章的背景直接出現在清單上面而不是淡進來。
+- **給標題一個補償用的 `fadeIn(initialAlpha = ...)`。** 用一個湊出來的數字去抵銷一個
+  乘法，下次任何一層改了就再湊一次。這正是第 37 則說「兩個機制都留著比較保險」錯在哪裡。
+
+**取捨與限制**
+
+- **一樣沒有機器驗證。** 這個專案沒有截圖測試，`build detekt lint` 全綠只證明它會編譯。
+  三層變兩層是從原始碼推出來的（預設值 ＋ `isEnabled` 那道閘），
+  「看起來對不對」只有裝置能回答。
+- **它現在依賴一件沒有東西在檢查的事**：任何人日後在 `sharedArticleCard` 裡面再加一個
+  `sharedBounds`，忘了寫 `None`，第三層就回來了。KDoc 寫下了這件事，
+  但 KDoc 不是 lint 規則。
