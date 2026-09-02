@@ -41,6 +41,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.PictureShape
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -94,7 +96,7 @@ fun DetailScreen(
     // one of its three states: a reader who opens an article over a slow
     // connection watches the card become a spinner and then an article, which is
     // one movement, not two.
-    val container = modifier.sharedArticleCard(id)
+    val container = modifier.sharedArticleCard(id, CardShape)
     // One branch per state, each naming what it draws: [DetailUiState] is sealed,
     // so a state added later without a picture to go with it will not build.
     when (state) {
@@ -195,8 +197,7 @@ private fun Article(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
-                    .sharedArticleImage(id)
-                    .clip(MaterialTheme.shapes.large),
+                    .sharedArticleImage(id, PictureShape),
             )
         }
         Text(

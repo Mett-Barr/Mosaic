@@ -53,6 +53,8 @@ import coil3.compose.AsyncImage
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.PictureShape
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -263,8 +265,12 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
         // after its own bounds as well, and matching items have to agree about
         // that: what comes before the shared modifier decides the rectangle that
         // travels, what comes after it measures the contents that sit inside.
-        modifier = modifier.sharedArticleCard(article.id).fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        // The shape goes to the shared modifier, not only to the Surface. While
+        // the transition runs this rectangle is lifted into an overlay and leaves
+        // the Surface behind, so a shape declared only there rounds nothing for
+        // the length of the flight.
+        modifier = modifier.sharedArticleCard(article.id, CardShape).fillMaxWidth(),
+        shape = CardShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column {
@@ -276,7 +282,7 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(LEAD_IMAGE_RATIO)
-                        .sharedArticleImage(article.id),
+                        .sharedArticleImage(article.id, PictureShape),
                 )
             }
             Column(
@@ -314,14 +320,11 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
 @Composable
 private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        // The bounds first, then the width, then the clip. The width goes after
-        // for the reason it does on the lead story; the clip stays after that so
-        // the rounded corners are drawn on the row rather than on the rectangle
-        // that is travelling.
+        // The bounds first, then the width. The clip is gone from here: it is the
+        // shared modifier's now, because the corners have to survive the overlay.
         modifier = modifier
-            .sharedArticleCard(article.id)
+            .sharedArticleCard(article.id, CardShape)
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -333,8 +336,7 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(THUMBNAIL)
-                    .sharedArticleImage(article.id)
-                    .clip(MaterialTheme.shapes.medium),
+                    .sharedArticleImage(article.id, PictureShape),
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
