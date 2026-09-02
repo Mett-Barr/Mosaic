@@ -21,6 +21,17 @@ internal interface SavedArticleDao {
     fun saved(): Flow<List<SavedArticleEntity>>
 
     /**
+     * The one row a reader kept under this id, or nothing.
+     *
+     * Separate from [saved] because the questions are different sizes. Answering
+     * "is this one here" out of the list means loading every kept article to
+     * look at one of them, which is work that grows with the reading list and
+     * buys nothing; the index on the primary key already knows the answer.
+     */
+    @Query("SELECT * FROM saved_articles WHERE id = :id")
+    suspend fun find(id: String): SavedArticleEntity?
+
+    /**
      * Saving something already saved is how a reader updates it, not how they
      * get two of it: INSERT OR REPLACE keeps one row per id, and because
      * saved_at is written fresh the article moves back to the top.
