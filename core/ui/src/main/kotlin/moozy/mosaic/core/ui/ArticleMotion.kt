@@ -203,6 +203,35 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
 }
 
 /**
+ * Where the article came from and when, moving to where the article screen puts it.
+ *
+ * The title's sibling, and shaped like it for the same reasons: one line of the
+ * same words at both ends, so bounds rather than an element, and scaled rather
+ * than remeasured because it is text.
+ *
+ * **Not every list can call this, and that is the point of it being a separate
+ * modifier rather than something the card does for whatever is inside it.** The
+ * two ends have to be holding up the *same* line. The feed's cards and the
+ * article both write source and time together; the Saved list has only ever kept
+ * the source, so its line is a shorter one that happens to start with the same
+ * word. Matching those two would measure one and scale it to the other's width,
+ * which is a source name stretching as it flies (DECISIONS.md 39).
+ */
+@Composable
+fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
+    val motion = LocalArticleMotion.current ?: return this
+    return with(motion.scope) {
+        this@sharedArticleAttribution.sharedBounds(
+            sharedContentState = rememberSharedContentState(
+                motion.key(id, ArticlePart.ATTRIBUTION),
+            ),
+            animatedVisibilityScope = motion.visibility,
+            resizeMode = ResizeMode.scaleToBounds(),
+        )
+    }
+}
+
+/**
  * The radius this end is drawing right now, somewhere between the two ends.
  *
  * **There is no *automatic* shape animation in Compose, which is not the same as
@@ -297,7 +326,7 @@ private class ArticleMotion(
 private val LocalArticleMotion = compositionLocalOf<ArticleMotion?> { null }
 
 /** Which part of an article the two screens are holding up against each other. */
-private enum class ArticlePart { CARD, IMAGE, TITLE }
+private enum class ArticlePart { CARD, IMAGE, TITLE, ATTRIBUTION }
 
 /**
  * What a shared element is matched by.

@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.sharedArticleAttribution
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -252,10 +253,10 @@ private fun ArticleList(
 /**
  * The story at the top of the feed: picture first, then the words.
  *
- * The card is what the article screen grows out of, and the picture and the title
- * travel there rather than fading out here and back in there. What that costs this
- * file is three modifiers; who is animating them, and whether anyone is, is not
- * something this module is told.
+ * The card is what the article screen grows out of, and the picture, the title
+ * and the line above it travel there rather than fading out here and back in
+ * there. What that costs this file is four modifiers; who is animating them, and
+ * whether anyone is, is not something this module is told.
  */
 @Composable
 private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -293,7 +294,10 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Attribution(article.attribution)
+                Attribution(
+                    attribution = article.attribution,
+                    modifier = Modifier.sharedArticleAttribution(article.id),
+                )
                 Text(
                     text = article.title,
                     style = MaterialTheme.typography.titleMedium,
@@ -348,7 +352,10 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Attribution(article.attribution)
+            Attribution(
+                attribution = article.attribution,
+                modifier = Modifier.sharedArticleAttribution(article.id),
+            )
             Text(
                 text = article.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -363,7 +370,14 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
     }
 }
 
-/** Where a story came from and when, in the one line the row model carries. */
+/**
+ * Where a story came from and when, in the one line the row model carries.
+ *
+ * The [modifier] is not decoration here: it is how the caller hands this line the
+ * bounds it travels in. The line is the same words on the card and on the article,
+ * so leaving it to cross-fade while the picture and the title flew was the one
+ * part of the card that stayed behind.
+ */
 @Composable
 private fun Attribution(attribution: String, modifier: Modifier = Modifier) {
     Text(

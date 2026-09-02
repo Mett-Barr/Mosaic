@@ -155,10 +155,18 @@ private fun OfflineNote(modifier: Modifier = Modifier) {
  * button: on this screen every row is saved, so the only thing the mark can
  * usefully do when tapped is stop being true.
  *
- * The card grows into the article the same way the feed's does. Only two of the
- * three parts are shared, because a [SavedRow] carries no picture -- this list
- * shows enough to recognise something the reader already chose, and what it does
- * not show, it does not carry.
+ * The card grows into the article the same way the feed's does, and two of the
+ * four parts stay behind. The picture, because a [SavedRow] carries none -- this
+ * list shows enough to recognise something the reader already chose, and what it
+ * does not show, it does not carry.
+ *
+ * The line above the title stays behind for a different reason, and a sharper
+ * one: it is not the same line. The feed and the article both write source and
+ * time -- `"The Verge · 2 hours ago"` -- and this row has only ever kept the
+ * source. Shared bounds would measure one of those and scale it to the other's
+ * width, so a reader would watch `"The Verge"` stretch across the gap the missing
+ * timestamp left. It cross-fades instead, which is what a line that changes its
+ * words should do (DECISIONS.md 39).
  */
 @Composable
 private fun SavedCard(

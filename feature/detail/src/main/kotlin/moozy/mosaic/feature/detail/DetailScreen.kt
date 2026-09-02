@@ -61,6 +61,7 @@ import coil3.compose.AsyncImagePreviewHandler
 import coil3.compose.LocalAsyncImagePreviewHandler
 import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.sharedArticleAttribution
 import moozy.mosaic.core.ui.sharedArticleCard
 import moozy.mosaic.core.ui.sharedArticleImage
 import moozy.mosaic.core.ui.sharedArticleTitle
@@ -353,6 +354,7 @@ private fun Article(
                 article.attribution,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.sharedArticleAttribution(id),
             )
             Text(
                 article.title,
