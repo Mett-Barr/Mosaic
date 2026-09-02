@@ -29,7 +29,8 @@
 | `:feature:feed` | 組合後的 feed。 |
 | `:feature:detail` | 單篇文章。 |
 | `:feature:saved` | 存起來離線閱讀的文章。 |
-| `:app` | 組裝、導覽、Android 進入點。 |
+| `:navigation` | 哪個畫面通往哪個畫面：NavKey、`entryProvider`、back stack 操作，以及上下兩條 bar。 |
+| `:app` | 組裝與 Android 進入點。**一條 `:feature:*` 的邊都不宣告**（`DECISIONS.md` 31）。 |
 
 相依方向一律向內。`:core:domain` 是純 Kotlin 模組、完全不相依 Android，
 DTO 或 Compose 型別因此**進不去**——不是靠審查時有人注意到，是建置直接失敗。
@@ -51,11 +52,15 @@ graph TB
     :core:ui["ui"]
   end
   subgraph :feature
-    :feature:detail["detail"]
     :feature:feed["feed"]
+    :feature:detail["detail"]
     :feature:saved["saved"]
   end
   :core:data --> :core:domain
+  :navigation --> :feature:feed
+  :navigation --> :feature:detail
+  :navigation --> :feature:saved
+  :navigation --> :core:domain
   :feature:detail --> :core:domain
   :feature:detail --> :core:ui
   :core:ui --> :core:domain
@@ -65,19 +70,18 @@ graph TB
   :app --> :core:data
   :app --> :core:domain
   :app --> :core:ui
-  :app --> :feature:feed
-  :app --> :feature:detail
-  :app --> :feature:saved
+  :app --> :navigation
 
 classDef android-library fill:#3BD482,stroke:#fff,stroke-width:2px,color:#fff;
 classDef kotlin-jvm fill:#8150FF,stroke:#fff,stroke-width:2px,color:#fff;
 classDef android-application fill:#2C4162,stroke:#fff,stroke-width:2px,color:#fff;
 class :core:data android-library
 class :core:domain kotlin-jvm
-class :feature:detail android-library
-class :core:ui android-library
+class :navigation android-library
 class :feature:feed android-library
+class :feature:detail android-library
 class :feature:saved android-library
+class :core:ui android-library
 class :app android-application
 
 ```

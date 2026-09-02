@@ -10,6 +10,10 @@
 
 ## 1. 七個模組，而不是一個
 
+> **現在是八個，而且 `:app` 的職責窄了一格**（第 31 則）：導覽獨立成 `:navigation`，
+> `:app` 只剩 composition root 與 Android 進入點，一條 `:feature:*` 的邊都不再宣告。
+> **下面不改寫**——它記的是當時的決定，而當時 `:app` 確實兼任導覽。
+
 **選了** —— `:app`、`:core:domain`、`:core:data`、`:core:ui`，以及一個畫面一個模組
 （`:feature:feed`、`:feature:detail`、`:feature:saved`）。
 
@@ -922,3 +926,54 @@ repository」，那個形狀存在是為了**調解**：遠端是權威、本機
 但它不再是畫面的事。同一句話現在由 `OneArticleTest` 斷言，而且更強：不是「網路失敗時
 退回存下來的那份」，是**一個請求都沒有發出去**。`DetailViewModelTest` 原來的位置換成反向的
 那一條——repository 說失敗，畫面就說失敗，即使那篇存過——它守的正是「不要把仲裁搬回來」。
+
+---
+
+## 31. 導覽自成一個模組，`:app` 只剩下組裝
+
+**選了** —— 新增 `:navigation`：三個 `NavKey`、`NavDisplay` 的 `entryProvider`、
+back stack 的兩個操作（`goTo`／`goToDestination`），以及上下兩條 bar 的 chrome，
+整批從 `MainActivity.kt` 搬過去，對外只留一個 `Mosaic()`。`:app` 剩下 `MosaicApp`、
+`MainActivity` 與套一次主題——**它現在是 composition root，僅此而已**。
+
+**為什麼** —— `:app` 原本同時做兩件事：Hilt 的 composition root，和唯一知道
+「哪個畫面通往哪個畫面」的地方。兩件事都在「最上面」，而那是它們唯一的共同點：
+前者存在是因為 Android 需要一個 `Application`，後者存在是因為畫面之間得有人接線。
+拆開之後，第 2 則那張表才說得出一句它原本說不出口的話——**`:app` 不得相依任何
+`:feature:*`**。原本那條「`:app` 看得到所有人」允許的東西太多：畫面決定重新長回
+`MainActivity` 的那天，檢查不會有任何反應。
+
+**驗證過新規則會失敗** —— 暫時讓 `:app` 相依 `:feature:feed`，檢查如預期報出
+`:app must not depend on :feature:feed`，然後還原。第 2 則對檢查的標準在這一條上一樣適用。
+
+**feature 那三條邊用 `api`** —— 讓 feature 留在 `:app` 的 compile classpath 上，因為
+Hilt 的元件是在 `:app` 產生的，而它要點名三個 `@HiltViewModel`。**實測 `implementation`
+也產得出完整的元件**（Hilt Gradle plugin 的 aggregating task 讀的是 runtime classpath），
+所以「非 `api` 不可」講得太滿。留 `api` 的理由是賠率不對稱：繫結掉了不會讓建置變紅，
+它在讀者點開畫面的那一刻才炸，而這一版**沒有在實機上跑過**。驗證只做到讀產生出來的
+`DaggerMosaicApp_HiltComponents_SingletonC`——兩種寫法的 ViewModel map 裡三個 key 都在。
+
+**取捨** —— **耦合沒有消失，它搬到了一個名字說得出它是什麼的模組裡。**`:navigation`
+依然看得到三個 feature，這無法迴避：接線的人必須認識被接的兩端。換到的是那份知識
+有了自己的名字與自己的邊界，不再混在「Android 進入點」裡。
+
+**而且這條規則比它看起來弱一格** —— `api` 是傳遞性的，`:feature:*` 的型別因此仍然出現在
+`:app` 的 compile classpath 上：`:app` 真的寫下 `import moozy.mosaic.feature.feed.FeedScreen`
+是編得過的，而 `checkModuleDependencies` 只讀**宣告出來的** `ProjectDependency`，看不到這件事。
+它擋的是「`:app` 宣告一條 feature 的邊」，不是「`:app` 碰得到 feature 的型別」。
+差別要講清楚，不要讓讀者以為它擋得比實際多。
+
+**當時還考慮**
+
+- **留在 `:app`。** 零成本，三個畫面的圖也小到一個檔案裝得下。放棄的原因不是檔案太大，
+  是那條 Gradle 規則因此永遠只能寫成「`:app` 看得到所有人」——第 2 則的整個價值在於
+  規則要能失敗，而一條允許一切的規則失敗不了。
+- **Now in Android 每個 feature 拆 `api` 與 `impl`。** NiA 需要那一刀，是因為它的 feature
+  透過一個共用的 `Navigator` 自己導覽，所以 feature 必須看得到彼此的 key。這個專案不是
+  那樣接的——畫面只收 callback，key 一個都不往下傳，所以既不需要 api/impl，也不需要
+  一個共用的導覽介面。
+- **順手讓 `:navigation` 也把主題套起來。** `:app` 會更薄，但主題是「這個 app 長什麼樣」，
+  不是「哪個畫面通往哪個」。合在一起只是把剛拆開的東西換個地方黏回去。
+
+**代價** —— 多一個模組就是多一份建置設定與一個編譯單元；`:app` 的 project 相依從六條
+變成四條，數量上省得不多。省下的不是邊的數量，是**`:app` 能做的事的種類**。
