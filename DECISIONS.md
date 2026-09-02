@@ -842,3 +842,72 @@ repository」，那個形狀存在是為了**調解**：遠端是權威、本機
   對應的縫。寫進 README 的延後表，而不是假裝它被涵蓋了
 - 這個功能大概只用到 Room 的五分之一。**為了「用資料庫」不值得換；為了那個可觀察的查詢
   與交易式的寫入才值得**
+
+---
+
+## 30. 一篇文章的來源由 repository 決定，而存過的那份就是它
+
+**選了** —— `article(id)` 先問 `saved_articles` 裡的那一列，沒有那一列才去問網路。
+`DetailViewModel` 只呼叫 `articles.article(id)`，`keptCopyOf` 整段刪掉。
+`NetworkArticleRepository` 因此改名 `SavedFirstArticleRepository`——它已經不只有網路一個來源，
+名字再叫 Network 就是在講一件不成立的事。
+
+**為什麼是 repository 而不是 ViewModel** —— 官方資料層文件把這件事明列在 repository 的職責裡：
+
+> "Repository classes are responsible for ... Resolving conflicts between multiple data sources"
+
+同一頁還寫著
+
+> "each repository defines a single source of truth"
+
+（<https://developer.android.com/topic/architecture/data-layer>）
+
+改之前，「一篇文章」沒有單一真相：網路是 `ArticleRepository` 的真相、Room 是 `SavedArticles`
+的真相，而 `DetailViewModel` 夾在中間挑。挑的規則寫在畫面裡，所以第二個要顯示一篇文章的地方
+（深連結、widget、之後的 saved 詳情）都得把同一條規則再抄一次——**抄錯了不會有人發現**，
+因為沒有任何一個測試的主詞是「這條規則」。
+
+**順便修掉的**：舊寫法是 `kept.saved.first().firstOrNull { it.id == id }`——為了看一列而把
+整張表讀進記憶體，再用 Kotlin 掃一遍。這張表本來沒有 `WHERE id = ?` 這個查詢，現在有了
+（`SavedArticleDao.find`）。這本來就是 SQL 該回答的問題。
+
+**行為改了，而且是刻意的** —— 第 29 則寫過「存下來的那份只在網路答不出來的時候被顯示」。
+現在反過來：**存過的那篇根本不再問網路**。SNAPI 的 `/articles/{id}` 回的就是摘要、沒有全文，
+所以重抓買到的只是六個顯示欄位有沒有變，代價是一次請求加一個轉圈——而且付在讀者唯一
+講明「我要它離線也在」的那篇文章上。第 23 則量過同一篇文章 3.5 小時後那六個欄位完全相同。
+
+**代價（誠實的那一半）** —— **存過的文章不再跟著來源更新**。標題改了、摘要修了、圖換了，
+讀者看到的還是他按下儲存那一刻的那份，直到他取消儲存再開一次。這是 offline-first 一定要付的錢；
+差別在於這裡沒有「線上時在背景刷新」那一層把它補回來，而**不做那層是選擇不是遺漏**：
+要做就得有 conflict policy（誰贏、`saved_at` 要不要跟著動、清單順序會不會因此跳動），
+那是為了一組量過沒有變化的欄位付的複雜度。真的需要那天，加的地方在 repository 這一層，
+`DetailViewModel` 不會知道有這回事——這正是把仲裁搬下來換到的東西。
+
+**`articles(after:)` 一個字都沒改** —— feed 沒有變成 offline-first，也不打算（第 25、28 則）。
+所以名字不叫 `OfflineFirstArticleRepository`——那是 Now in Android 的慣例，但它會宣稱一件
+這個類別只做了一半的事。`SavedFirstArticleRepository` 說的剛好是它做的：**存過的那份優先**，
+而 feed 從來沒有存過的那份，所以 feed 那半自然退化成只有網路。名字承認這個分裂，KDoc 講為什麼。
+
+**當時還考慮**
+
+- **只把 `kept.saved.first()` 換成 `find(id)`，仲裁留在 ViewModel。** 少讀一整張表，
+  但單一真相還是沒有，規則還是抄在畫面裡。省下的是這件事最不重要的那一半。
+- **在 `:core:domain` 加一個只有 `find` 的介面讓 repository 依賴。** domain 已經有
+  `SavedArticles`，再加一個等於同一張表開兩個門。`:core:data` 內部直接依賴 DAO 是
+  Now in Android 的做法（`OfflineFirstNewsRepository` 拿的就是 `NewsResourceDao`），
+  而且 module 邊界沒有變寬——DAO 仍然 `internal`，跨出 `:core:data` 的還是只有 domain 的介面。
+- **讓 `article(id)` 回報這一份是從哪裡來的**（`Loaded(article, fromDisk = true)` 之類）。
+  沒有呼叫端要用：`DetailUiState.Content.saved` 問的是「現在還存著嗎」，不是「這份從哪來」，
+  而那兩個問題會在讀者按下取消儲存的那一刻分岔——畫面要的是前者。
+- **保留 ViewModel 那條退路當第二層保險。** 它已經到不了（存過的那篇 repository 就回了），
+  留著是一段測試覆蓋不到的死碼，而且會讓下一個讀 `DetailViewModel` 的人以為仲裁還在這裡。
+- **讀不回來的那一列就讓它炸。** `SavedArticleEntity.toArticle()` 對域模型不接受的值會丟
+  `IllegalArgumentException`，而這個 class 的 KDoc 第一句是「失敗在這裡停止被丟出、變成答案」。
+  所以那一列被當成「這裡沒有」處理、掉回網路——第 29 則的 `readable()` 用同一個理由
+  少算一篇而不是少算一整份清單。
+
+**一個測試往下搬了一層** —— `DetailViewModelTest` 的
+`an article that was kept opens with no network at all` 斷言的行為沒有消失，
+但它不再是畫面的事。同一句話現在由 `OneArticleTest` 斷言，而且更強：不是「網路失敗時
+退回存下來的那份」，是**一個請求都沒有發出去**。`DetailViewModelTest` 原來的位置換成反向的
+那一條——repository 說失敗，畫面就說失敗，即使那篇存過——它守的正是「不要把仲裁搬回來」。
