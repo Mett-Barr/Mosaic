@@ -31,11 +31,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewFontScale
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import moozy.mosaic.core.ui.MosaicTheme
 import moozy.mosaic.domain.model.ArticleId
+import moozy.mosaic.domain.model.FeedFailure
 
 /**
  * The article, holding on to a view model.
@@ -221,3 +228,139 @@ private fun Article(
 }
 
 private const val IMAGE_RATIO = 16f / 9f
+
+/**
+ * The article the previews below are drawn from.
+ *
+ * No image URL, for the reason the feed's fixtures carry none: Coil has nowhere
+ * to fetch from in a still render and this screen sets no placeholder, so a URL
+ * would reserve a 16:9 hole and leave it empty.
+ */
+private val PreviewArticle = ArticleView(
+    title = "The observatory that keeps working because nobody funded its replacement",
+    attribution = "Nature · Yesterday",
+    summary = "Forty years past the date it was due to be switched off, the array is still " +
+        "returning usable data -- and has now outlived three of the instruments built to " +
+        "replace it.",
+    imageUrl = null,
+    url = "https://example.org/observatory",
+    readFullLabel = "Read the full article at Nature",
+)
+
+/**
+ * A failure with the words the app would actually give it.
+ *
+ * The message is [headline]'s to choose, the hint is [hint]'s, and whether there
+ * is a button at all is [worthTryingAgain]'s. A fixture spelling any of the three
+ * out here would go stale the first time one of them changed.
+ */
+private fun failed(reason: FeedFailure) = DetailUiState.Failed(
+    message = reason.headline(),
+    hint = reason.hint(),
+    canRetry = reason.worthTryingAgain(),
+)
+
+/** The pair worth seeing together: one offers another go, the other deliberately does not. */
+private class DetailFailures : PreviewParameterProvider<DetailUiState.Failed> {
+
+    // Backed by a list rather than built lazily: the tooling walks the sequence
+    // once to count it and again to render, and a sequence computed on the fly
+    // is empty the second time.
+    private val states = listOf(
+        "Offline" to failed(FeedFailure.Offline()),
+        "Gone" to failed(FeedFailure.Missing()),
+    )
+
+    override val values = states.map { (_, state) -> state }.asSequence()
+
+    override fun getDisplayName(index: Int) = states[index].first
+}
+
+/** One arc in the primary colour. There is nothing here a second theme would show. */
+@Preview
+@Composable
+private fun LoadingStatePreview() {
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) { LoadingState() }
+    }
+}
+
+/** Both failures, so the card that offers another go reads against the one that cannot. */
+@Preview
+@Composable
+private fun FailedStatePreview(
+    @PreviewParameter(DetailFailures::class) state: DetailUiState.Failed,
+) {
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            FailedState(state = state, onRetry = {}, onBack = {})
+        }
+    }
+}
+
+/**
+ * The article as a reader first meets it: not kept.
+ *
+ * One theme, because [ArticlePreviews] takes the same screen through both. What
+ * this one is for is the pair only this state shows -- "Save to read offline"
+ * and the outlined mark beside it.
+ */
+@Preview
+@Composable
+private fun ArticlePreview() {
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Article(
+                state = DetailUiState.Content(PreviewArticle),
+                onBack = {},
+                onKeep = {},
+                onLetGo = {},
+            )
+        }
+    }
+}
+
+/**
+ * The article kept, in both themes.
+ *
+ * Kept rather than not because that is the state with the colour in it: a filled
+ * tonal button and a filled bookmark, which are the two slots the dark scheme
+ * moves furthest from the light one.
+ */
+@PreviewLightDark
+@Composable
+private fun ArticlePreviews() {
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Article(
+                state = DetailUiState.Content(PreviewArticle, saved = true),
+                onBack = {},
+                onKeep = {},
+                onLetGo = {},
+            )
+        }
+    }
+}
+
+/**
+ * The one place in the app that carries `@PreviewFontScale`.
+ *
+ * Seven renders, which is why it is here and nowhere else: this is the only
+ * screen whose buttons are labelled with sentences rather than words, and
+ * "Saved for offline — tap to remove" is the label that stops fitting first when
+ * somebody has their text at 200%.
+ */
+@PreviewFontScale
+@Composable
+private fun ArticleFontScalePreviews() {
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Article(
+                state = DetailUiState.Content(PreviewArticle, saved = true),
+                onBack = {},
+                onKeep = {},
+                onLetGo = {},
+            )
+        }
+    }
+}

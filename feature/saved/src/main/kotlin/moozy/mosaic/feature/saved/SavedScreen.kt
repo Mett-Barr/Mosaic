@@ -1,5 +1,6 @@
 package moozy.mosaic.feature.saved
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,15 +20,20 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.collections.immutable.persistentListOf
 import moozy.mosaic.domain.model.ArticleId
 
 /**
@@ -188,6 +194,75 @@ private fun SavedCard(
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
+        }
+    }
+}
+
+/** Three kept articles, the last long enough to reach the three lines a card allows. */
+private val PreviewKept = SavedUiState.Content(
+    persistentListOf(
+        SavedRow(
+            id = ArticleId("preview-first"),
+            title = "A quiet redesign of the thing everyone already knew how to use",
+            source = "The Verge",
+        ),
+        SavedRow(
+            id = ArticleId("preview-second"),
+            title = "Rail operators settle on one timetable format after nine years",
+            source = "Reuters",
+        ),
+        SavedRow(
+            id = ArticleId("preview-third"),
+            title = "The observatory that keeps working because nobody ever funded the " +
+                "replacement that was supposed to have switched it off by now",
+            source = "Nature",
+        ),
+    ),
+)
+
+/**
+ * Material's own colours, not the app's.
+ *
+ * `MosaicTheme` lives in `:core:ui`, and this module is allowed to depend on
+ * `:core:domain` and nothing else -- `checkModuleDependencies` fails the build
+ * over it, so a preview cannot buy its way past the rule. At runtime the theme
+ * arrives through Compose from whoever applied it above, and a still render has
+ * no whoever. So what the two below check is layout and contrast; the green, and
+ * the wider corners the app draws, are somebody else's to get wrong.
+ */
+@Composable
+private fun SavedPreviewTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(),
+        content = content,
+    )
+}
+
+/**
+ * One theme: a centred paragraph of `onSurfaceVariant`, which is the pairing
+ * [SavedListPreviews] already holds up to both schemes.
+ */
+@Preview
+@Composable
+private fun EmptyStatePreview() {
+    SavedPreviewTheme {
+        Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
+    }
+}
+
+/**
+ * The kept list in both themes.
+ *
+ * Worth two renders because three fills sit on top of one another here -- the
+ * note on `surfaceContainerHigh`, the cards on `surfaceContainer`, both on
+ * `background` -- and a scheme that flattens them takes the cards' edges with it.
+ */
+@PreviewLightDark
+@Composable
+private fun SavedListPreviews() {
+    SavedPreviewTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            SavedList(state = PreviewKept, onOpenArticle = {}, onLetGo = {})
         }
     }
 }
