@@ -45,6 +45,18 @@ class MovieTest {
     }
 
     @Test
+    fun `a clock that is wrong by more than a date line does not pin the list`() {
+        // The reason the test above exists is a phone crossing a date line,
+        // which is hours. A device that came up before it could reach a time
+        // server can write a day years ahead of the one it is having, and that
+        // day is kept in cacheDir -- so "still current" would hold until the
+        // calendar caught up with it, and nothing would ever ask again.
+        val trending = trending(LocalDate.parse("2026-09-02"))
+
+        assertFalse(trending.stillCurrentOn(LocalDate.parse("2026-08-20")))
+    }
+
+    @Test
     fun `a film with no title is not a film`() {
         assertThrows(IllegalArgumentException::class.java) { movie(title = "   ") }
     }
