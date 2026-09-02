@@ -91,6 +91,46 @@ class ArticlePagingSourceTest {
     }
 
     @Test
+    fun `a page nobody could read is a failure rather than the end of the list`() = runTest {
+        // What a change of format at the other end looks like from here: the
+        // page arrived, and not one row of it could be decoded. Handed on as an
+        // empty page it reaches the reader as "no articles yet" -- a bug wearing
+        // the clothes of an answer, and the one screen that invites them to wait
+        // for something that is never coming.
+        val repository = FakeArticles(firstPage = page(dropped = 20))
+
+        val result = ArticlePagingSource(repository).load(refresh())
+
+        assertTrue("expected an error, got $result", result is PagingSource.LoadResult.Error)
+        // Read back through the same unwrapping the screen uses, because the
+        // words are the behaviour: any other failure would say something else.
+        assertEquals(
+            "The feed sent something this app could not read.",
+            (result as PagingSource.LoadResult.Error).throwable.hint(),
+        )
+    }
+
+    @Test
+    fun `a page emptied by de-duplication is the end of the list, not a failure`() = runTest {
+        // This page also arrives full and leaves empty, but for the other
+        // reason: the generation has seen all of it before. The count is
+        // deliberately not zero -- were the emptiness measured after
+        // de-duplication rather than on what the server sent, ordinary overlap
+        // would become an error screen, and a zero here would let that pass.
+        val repository = FakeArticles(
+            firstPage = page(1, 2, next = NEXT),
+            nextPages = mapOf(NEXT to page(1, 2, dropped = 3)),
+        )
+        val source = ArticlePagingSource(repository)
+        source.load(refresh())
+
+        val result = source.load(append(PageCursor(NEXT)))
+
+        assertTrue("expected a page, got $result", result is PagingSource.LoadResult.Page)
+        assertEquals(emptyList<String>(), (result as PagingSource.LoadResult.Page).data.map { it.id.value })
+    }
+
+    @Test
     fun `refreshing starts at the top rather than where the reader was`() {
         val source = ArticlePagingSource(FakeArticles(firstPage = page(1)))
 
@@ -107,9 +147,10 @@ class ArticlePagingSourceTest {
 
     private val config = androidx.paging.PagingConfig(PAGE_SIZE)
 
-    private fun page(vararg ids: Int, next: String? = null) = ArticlesResult.Loaded(
+    private fun page(vararg ids: Int, next: String? = null, dropped: Int = 0) = ArticlesResult.Loaded(
         articles = ids.map { article(it) },
         next = next?.let(::PageCursor),
+        dropped = dropped,
     )
 
     private fun article(id: Int) = ArticleItem(
