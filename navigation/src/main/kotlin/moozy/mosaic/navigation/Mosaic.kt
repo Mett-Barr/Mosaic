@@ -1,9 +1,9 @@
 package moozy.mosaic.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -65,18 +65,34 @@ fun Mosaic(modifier: Modifier = Modifier) {
                 // the stack says whether there is a bar and what is under it says
                 // which of the two is lit.
                 //
-                // **It slides rather than vanishing.** A bar that disappeared on the
-                // frame the article was tapped would blink out while the card it
-                // grew from was still card-sized, which is the loudest thing on
-                // screen during a transition meant to be about one rectangle. A
-                // slide also keeps the bar's height reserved for the whole of its
-                // exit, so the list underneath does not reflow while the reader can
-                // still see it: the layout only changes when the bar is gone, and by
-                // then the article's own opaque rectangle is the whole display.
+                // **It does not move, and being covered is not the same as
+                // leaving.** This bar used to slide out from under the article and
+                // slide back in behind it, which put a second movement on screen
+                // beside the one the reader is meant to follow -- and a container
+                // transform is one rectangle growing over what is behind it, so
+                // the chrome's part in it is to be covered rather than
+                // choreographed. `SharedTransitionLayout` is outside this
+                // `Scaffold` for exactly that reason (DECISIONS.md 42), which
+                // makes the growing rectangle able to draw over this strip. So
+                // neither direction is animated here at all.
+                //
+                // `AnimatedVisibility` stays, because presence is still its
+                // question: what it measures is what the lists below are told to
+                // keep clear at the bottom, and that has to be nothing when there
+                // is no bar (DECISIONS.md 45). It is only the transitions that are
+                // gone. The list below does not reflow when that height is
+                // released -- a `LazyColumn`'s bottom `contentPadding` only
+                // lengthens what can be scrolled to, so dropping it moves no item
+                // that is on screen. That was checked on the device rather than
+                // reasoned about, and so was the one thing that does not work:
+                // `visible = showsTheBar() || isTransitionActive`, which would
+                // have kept the bar until the article covered it, drops the bar
+                // for a frame first, because the stack says "no bar" before the
+                // shared elements have matched (DECISIONS.md 58).
                 AnimatedVisibility(
                     visible = backStack.showsTheBar(),
-                    enter = slideInVertically { height -> height },
-                    exit = slideOutVertically { height -> height },
+                    enter = EnterTransition.None,
+                    exit = ExitTransition.None,
                 ) {
                     DestinationBar(
                         current = backStack.destination(),
