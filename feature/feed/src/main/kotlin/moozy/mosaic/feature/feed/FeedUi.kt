@@ -2,12 +2,12 @@ package moozy.mosaic.feature.feed
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
-import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.Grain
 import androidx.compose.material.icons.outlined.QuestionMark
+import androidx.compose.material.icons.outlined.Shower
 import androidx.compose.material.icons.outlined.Thunderstorm
 import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material.icons.outlined.Waves
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -189,14 +189,26 @@ internal fun Sky.readable(): String = when (this) {
 internal fun Sky.icon(): ImageVector = when (this) {
     Sky.CLEAR -> Icons.Outlined.WbSunny
     Sky.CLOUDY -> Icons.Outlined.Cloud
-    // There is no fog in the icon set. Blur is the one that reads as air you
-    // cannot see through, which is the whole of what this has to say.
-    Sky.FOG -> Icons.Outlined.BlurOn
-    // Scattered specks beside one falling drop. Drizzle and rain are kept apart
-    // in the domain because one changes whether you take a coat, and these two
-    // pictures are the smallest pair that keeps saying so.
-    Sky.DRIZZLE -> Icons.Outlined.Grain
-    Sky.RAIN -> Icons.Outlined.WaterDrop
+    // There is still no fog in the icon set, and the two that were reached for
+    // first are the two this set draws as dot fields: `BlurOn` is a five-by-five
+    // grid and `Grain` is seven specks, so at 24dp fog and drizzle were the pair
+    // that collided -- with each other, and both with the grey rectangle an app
+    // shows where a picture has not loaded yet. Layered horizontal strokes are
+    // what a weather map draws for air you cannot see through, and nothing else
+    // among the eight is made of horizontal strokes.
+    Sky.FOG -> Icons.Outlined.Waves
+    // One drop against a head of them falling. Drizzle and rain are kept apart in
+    // the domain because one changes whether you take a coat, and *less water
+    // against more* is the distinction that says so -- which the drop and the
+    // specks did not, being the same amount of ink in a different arrangement.
+    //
+    // `Shower` is named for a bathroom, and in a row that runs sun, cloud, mist,
+    // drop, snowflake, thundercloud it is read for its silhouette instead: the
+    // only glyph here with water on its way down. The word is also the source's
+    // own -- WMO 80-82 are rain showers, and `OpenMeteoMapper` puts them in this
+    // very branch.
+    Sky.DRIZZLE -> Icons.Outlined.WaterDrop
+    Sky.RAIN -> Icons.Outlined.Shower
     Sky.SNOW -> Icons.Outlined.AcUnit
     Sky.THUNDERSTORM -> Icons.Outlined.Thunderstorm
     Sky.UNKNOWN -> Icons.Outlined.QuestionMark
