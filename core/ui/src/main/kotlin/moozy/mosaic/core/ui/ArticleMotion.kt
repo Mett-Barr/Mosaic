@@ -3,8 +3,6 @@ package moozy.mosaic.core.ui
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SharedTransitionScope.OverlayClip
 import androidx.compose.animation.SharedTransitionScope.ResizeMode
@@ -16,7 +14,6 @@ import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -103,6 +100,20 @@ enum class PictureSeat { MEETING_AN_EDGE, STANDING_ALONE }
 /** The corners a card keeps in either list. */
 private val CardCorner = 20.dp
 
+/**
+ * The corners a thumbnail carries, now that they are one end of a flight.
+ *
+ * The same sixteen dp `MaterialTheme.shapes.medium` gives every small inset thing,
+ * and it used to be read from there (DECISIONS.md 44). It is a number here for the
+ * reason that entry gave for *not* putting it here: it said a thumbnail's corner
+ * "is not either end" of the transition and so belonged to the design's scale
+ * rather than to this file. It is one end now -- the picture rounds itself as it
+ * shrinks into the row, from the square the article leaves it at -- and an end has
+ * to agree with the other end, which is what [CardCorner] is doing three lines up
+ * (DECISIONS.md 59).
+ */
+private val ThumbnailCorner = 16.dp
+
 /** No corners at all, for the end that has the display's own edge for a border. */
 private val FlushCorner = 0.dp
 
@@ -182,13 +193,15 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
  * fade past each other (see `CardBecomesArticle` in `:navigation`), so this
  * rectangle is where the crossing happens.
  *
- * **It is the only cross-fade, and staying that way takes saying so.** Every
- * `sharedBounds` nested inside this one defaults to the same pair, and a default
- * that is live only while a match is found is a fade that appears exactly when
- * this one does -- three alphas over the same words. So the parts that travel
- * inside this rectangle pass `EnterTransition.None`/`ExitTransition.None`
- * ([sharedArticleTitle], [sharedArticleAttribution]) and let this one carry the
- * crossing for all of them.
+ * **It is the cross-fade for everything this rectangle still holds, which is
+ * everything that is not a shared element of its own.** The summary, the way
+ * back, the buttons: those are inside this subtree, so this alpha is what they
+ * cross on. The parts that travel separately are not -- a matched shared element
+ * is lifted into the overlay and *"will escape the parent's bounds and its layer
+ * transformations"*, so this fade never reaches [sharedArticleTitle] or
+ * [sharedArticleAttribution] and each of those carries its own (DECISIONS.md 60).
+ * That is one alpha per drawing rather than one alpha over all of them, and it is
+ * not a stack of three: it never was.
  *
  * A caller puts its size modifiers *after* this one. That is what the Compose
  * documentation asks for -- *"Place size modifiers after the shared element
@@ -228,7 +241,10 @@ val CardShape: Shape = RoundedCornerShape(CardCorner)
 fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
     val motion = LocalArticleMotion.current
         ?: return this.clip(RoundedCornerShape(at.corner(CardCorner)))
-    val radius = motion.corner(at, CardCorner)
+    val radius = motion.corner(
+        thisEnd = at.corner(CardCorner),
+        otherEnd = at.other.corner(CardCorner),
+    )
     return with(motion.scope) {
         val card = rememberSharedContentState(motion.key(id, ArticlePart.CARD))
         val overlay = remember(radius) { OverlayClip(TravellingCorner(radius)) }
@@ -271,40 +287,62 @@ fun Modifier.sharedArticleCard(id: ArticleId, at: ArticleEnd): Modifier {
  * the clip is the picture's own. Inheriting a clip is only worth anything to
  * something the clip reaches; a thumbnail inset in a row is not reached by the row's
  * corners standing still or flying, so it is handed the shape the design gives an
- * inset picture and keeps it either way.
+ * inset picture -- and, since it owns that shape, it is also the one seat that can
+ * animate it.
+ *
+ * **So the two seats are asymmetric, and that is the whole of DECISIONS.md 59.**
+ * `sharedElement` draws only the end that is arriving, so each direction of the
+ * flight is one seat's problem. Coming back, the arriving end is the thumbnail:
+ * it knows its own radius and it knows the other end's, because the article's
+ * photograph is flush with the display at every article there is. So it travels
+ * between them on the same spring as the rectangle around it, the same way
+ * [sharedArticleCard] does, and the picture rounds as it shrinks instead of
+ * arriving round. Going in, the arriving end is the article's photograph, which
+ * cannot name the other end -- a lead story's picture is flush and a row's
+ * thumbnail is not, and only the id crosses the navigation boundary. It therefore
+ * asks for no shape at all, exactly as before, and DECISIONS.md 44's one-frame
+ * discontinuity on the way in stands.
  */
 @Composable
 fun Modifier.sharedArticleImage(id: ArticleId, at: PictureSeat): Modifier {
     val motion = LocalArticleMotion.current ?: return this.ownCorners(at)
     return with(motion.scope) {
-        this@sharedArticleImage
-            .sharedElement(
-                sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE)),
-                animatedVisibilityScope = motion.visibility,
-                boundsTransform = OneSpringForBounds,
+        val picture = rememberSharedContentState(motion.key(id, ArticlePart.IMAGE))
+        val flying = this@sharedArticleImage.sharedElement(
+            sharedContentState = picture,
+            animatedVisibilityScope = motion.visibility,
+            boundsTransform = OneSpringForBounds,
+        )
+        if (at == PictureSeat.MEETING_AN_EDGE) {
+            flying
+        } else {
+            flying.roundedBy(
+                radius = motion.corner(thisEnd = ThumbnailCorner, otherEnd = FlushCorner),
+                standingStill = ThumbnailCorner,
+                whileMatched = picture,
             )
-            .ownCorners(at)
+        }
     }
 }
 
 /**
- * The corners a picture cuts for itself, which is none unless nothing else will.
+ * The corners a picture cuts for itself when there is no transition to read.
  *
- * `medium` and not the card's radius, because it is not the card: the design draws
- * an inset thumbnail with the same corner it gives every other small inset thing,
- * and [CardCorner] is the radius of the rectangle around all of them.
+ * [ThumbnailCorner] and not the card's radius, because it is not the card: the
+ * design draws an inset thumbnail with the same corner it gives every other small
+ * inset thing, and [CardCorner] is the radius of the rectangle around all of them.
  *
- * Inside the shared element rather than in front of it, so that it is the picture
- * being clipped and not the element carrying it. In front, the clip would be an
- * ancestor of the shared element -- and an element lifted into the overlay
- * *"will escape the parent's bounds and its layer transformations"*, so the
- * corners would be there while the picture sat still and gone for the length of
- * every flight. Behind it, the picture is measured to whatever bounds it has this
- * frame and then cut, which is the same sentence standing still and moving.
+ * This is the `@Preview` and test path only. Under a transition the same radius
+ * arrives through `roundedBy`, which puts it in a layer block instead of a
+ * composed `clip` so that it can move -- and it has to be inside the shared
+ * element rather than in front of it either way, so that it is the picture being
+ * clipped and not the element carrying it. In front, the clip would be an ancestor
+ * of the shared element -- and an element lifted into the overlay *"will escape
+ * the parent's bounds and its layer transformations"*, so the corners would be
+ * there while the picture sat still and gone for the length of every flight.
  */
-@Composable
 private fun Modifier.ownCorners(at: PictureSeat): Modifier =
-    if (at == PictureSeat.STANDING_ALONE) clip(MaterialTheme.shapes.medium) else this
+    if (at == PictureSeat.STANDING_ALONE) clip(RoundedCornerShape(ThumbnailCorner)) else this
 
 /**
  * The article's title, moving to where the article screen puts it.
@@ -315,15 +353,23 @@ private fun Modifier.ownCorners(at: PictureSeat): Modifier =
  * it once at the size it is going to be and scales that, which is what the Compose
  * documentation recommends for text and is the reason this one is not [sharedElement].
  *
- * **It travels and it does not fade, and the two are separate decisions.**
- * `sharedBounds` defaults `enter` and `exit` to `fadeIn()`/`fadeOut()`, live
- * exactly while a match is found -- so leaving them alone put a third fade on
- * these words. They already carry two: [sharedArticleCard]'s, because they sit
- * inside it, and the article entry's own (`CardBecomesArticle` in `:navigation`).
- * Three alphas multiply, and the title was arriving later and darker than the
- * summary beside it, which fades twice because it is not a shared element at
- * all. This is the same arithmetic DECISIONS.md 37 wrote down when it stopped
- * the back arrow fading itself to nothing.
+ * **It travels and it fades, and this fade is the only one that reaches it.**
+ * DECISIONS.md 47 took the fade away on the arithmetic that three alphas were
+ * multiplying over these words -- this one, [sharedArticleCard]'s, and the
+ * article entry's (`CardBecomesArticle` in `:navigation`). The frames say
+ * otherwise, and DECISIONS.md 60 has them: with all three supposedly stacked
+ * and this one set to `None`, both titles were drawn at full black while the
+ * summary beside them, which really does carry the outer two, faded normally.
+ * The other two never arrive, because a matched shared element is lifted into
+ * the overlay and *"will escape the parent's bounds and its layer
+ * transformations"* -- alpha among them. The count over these words is one, and
+ * with `None` it was zero.
+ *
+ * **Zero is not a smaller number of fades here, it is a second title.**
+ * `sharedBounds` renders both ends (`renderOnlyWhenVisible = false` in
+ * `SharedTransitionScope.kt`), so the fade is not decoration on one drawing: it
+ * is what dissolves the card's title into the article's. Without it the reader
+ * gets both at once, at two sizes, offset -- which is what the developer saw.
  */
 @Composable
 fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
@@ -332,8 +378,8 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
         this@sharedArticleTitle.sharedBounds(
             sharedContentState = rememberSharedContentState(motion.key(id, ArticlePart.TITLE)),
             animatedVisibilityScope = motion.visibility,
-            enter = EnterTransition.None,
-            exit = ExitTransition.None,
+            enter = fadeIn(),
+            exit = fadeOut(),
             boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )
@@ -355,8 +401,13 @@ fun Modifier.sharedArticleTitle(id: ArticleId): Modifier {
  * word. Matching those two would measure one and scale it to the other's width,
  * which is a source name stretching as it flies (DECISIONS.md 39).
  *
- * No `enter` and no `exit`, for the reason [sharedArticleTitle] gives: the two
- * fades already over this line are two more than it needs.
+ * A fade of its own, for the reason [sharedArticleTitle] gives, and it is worth
+ * asking separately rather than copying: the reason there is that the two ends
+ * hold the same words at two sizes and both get drawn. That is this line as
+ * well -- the feed writes source and time, the article writes source and time,
+ * and the two type scales are not the same one. The Saved list does not come
+ * into it, because it never calls this at all (DECISIONS.md 39): the only pair
+ * this modifier ever matches is a feed card against an article.
  */
 @Composable
 fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
@@ -367,8 +418,8 @@ fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
                 motion.key(id, ArticlePart.ATTRIBUTION),
             ),
             animatedVisibilityScope = motion.visibility,
-            enter = EnterTransition.None,
-            exit = ExitTransition.None,
+            enter = fadeIn(),
+            exit = fadeOut(),
             boundsTransform = OneSpringForBounds,
             resizeMode = ResizeMode.scaleToBounds(),
         )
@@ -400,15 +451,22 @@ fun Modifier.sharedArticleAttribution(id: ArticleId): Modifier {
  * **[OneSpring] is passed rather than left to `animateDp`'s default**, because the
  * default is a faster curve than the rectangle's and a corner that arrives first
  * is a corner that spends the rest of the flight being wrong.
+ *
+ * **Two radii rather than an [ArticleEnd]**, because the picture's two ends are
+ * not each other's opposite the way the card's are. A card at one end knows what
+ * the other end looks like from its own enum; the article's photograph does not
+ * know whether the card it came from held a thumbnail or a lead story's picture
+ * (DECISIONS.md 44), so only one of its two seats can name both ends. Taking the
+ * pair as arguments lets that caller say so and keeps the other one from having
+ * to (DECISIONS.md 59).
  */
 @Composable
-private fun ArticleMotion.corner(at: ArticleEnd, inAList: Dp): State<Dp> =
+private fun ArticleMotion.corner(thisEnd: Dp, otherEnd: Dp): State<Dp> =
     visibility.transition.animateDp(
         transitionSpec = { OneSpring },
         label = "article corner",
     ) { state ->
-        val drawing = if (state == EnterExitState.Visible) at else at.other
-        drawing.corner(inAList)
+        if (state == EnterExitState.Visible) thisEnd else otherEnd
     }
 
 /** [inAList] at one end, and the display's own edge at the other. */
@@ -429,6 +487,11 @@ private val ArticleEnd.other: ArticleEnd
  * composition and would keep clipping to the radius the first frame happened to
  * have. Read inside the block, the radius reaches the layer on every frame it
  * changes without recomposing anything.
+ *
+ * Two callers now: the card, and the one picture that owns its own corners
+ * ([PictureSeat.STANDING_ALONE]). They ask the same question -- what radius am I
+ * drawing on this frame, given that only the matched one is going anywhere -- and
+ * every paragraph below is the answer to it, whichever of the two is asking.
  *
  * **[whileMatched] is why twenty untouched cards do not square their corners off
  * when one of them is tapped.** The transition driving [radius] belongs to the
