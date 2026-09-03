@@ -2,6 +2,8 @@ package moozy.mosaic.data.movie
 
 import app.cash.turbine.test
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockEngineConfig
+import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
 import io.ktor.client.request.HttpRequestData
@@ -13,9 +15,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
@@ -25,9 +27,8 @@ import moozy.mosaic.domain.model.Movie
 import moozy.mosaic.domain.model.MovieId
 import moozy.mosaic.domain.model.TrendingMovies
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 /**
@@ -78,7 +79,7 @@ class TmdbTrendingTest {
     fun `it asks the day's trending films, and says who is asking`() = runTest {
         val asked = mutableListOf<HttpRequestData>()
         val films = trending(
-            MockEngine { request ->
+            answering = { request ->
                 asked += request
                 requests++
                 respond(page(), HttpStatusCode.OK, json)
@@ -161,13 +162,7 @@ class TmdbTrendingTest {
     fun `a list survives a failure rather than being replaced by one`() = runTest {
         val store = InMemoryStore()
         store.write(TrendingMovies(listOf(yesterdaysFilm()), LocalDate.parse("2026-09-01")))
-        val films = trending(
-            MockEngine {
-                requests++
-                respondError(HttpStatusCode.InternalServerError)
-            },
-            store,
-        )
+        val films = trending(refusing(), store)
 
         films.trending.test {
             assertEquals(emptyList<Movie>(), awaitItem())
@@ -185,12 +180,7 @@ class TmdbTrendingTest {
 
     @Test
     fun `nothing ever arriving is no strip rather than a guess`() = runTest {
-        val films = trending(
-            MockEngine {
-                requests++
-                respondError(HttpStatusCode.InternalServerError)
-            },
-        )
+        val films = trending(refusing())
 
         films.trending.test {
             assertEquals(emptyList<Movie>(), awaitItem())
@@ -208,12 +198,12 @@ class TmdbTrendingTest {
         // is torn down and the next subscriber starts it again from the top.
         // Every other test here subscribes once, which is why none of them has
         // anything to say about what the second subscription costs.
-        val asked = Channel<Unit>(Channel.UNLIMITED)
-        val films = trending(refusing(asked))
+        val films = trending(refusing())
 
         val watching = launch { films.trending.collect {} }
-        assertTrue("the first reader pays for one attempt", within(A_MOMENT, asked))
-        settleUntil { films.lastProblem != null }
+        runCurrent()
+        assertEquals("the first reader pays for one attempt", 1, requests)
+        assertNotNull("and a refusal is what it paid for", films.lastProblem)
         assertEquals("and pays for it straight away", 0L, currentTime)
 
         // Both clocks move, because on a device they are the same clock: the
@@ -233,16 +223,14 @@ class TmdbTrendingTest {
         // reads nothing back, because a refusal writes nothing down. Whether
         // that costs a request is the whole question.
         val watchingAgain = launch { films.trending.collect {} }
+        runCurrent()
 
         // The wait belongs to the refusal, not to whoever happened to be
         // watching when it was bought. Otherwise a revoked or mistyped token is
         // a 401 on every visit to the feed for as long as the app is installed
         // -- and nobody is ever told, because a failure here means a shorter
         // strip and nothing else.
-        assertFalse(
-            "coming back to the feed is not a reason to ask again",
-            within(A_MOMENT, asked),
-        )
+        assertEquals("coming back to the feed is not a reason to ask again", 1, requests)
 
         // A wait and not a stop, which is the other half of the same policy --
         // and what is left of the wait, not another whole one. Six of the sixty
@@ -252,18 +240,18 @@ class TmdbTrendingTest {
         // is the only assertion in the file that would notice.
         now = now.plusMillis(WHAT_IS_LEFT_OF_THE_MINUTE)
         advanceTimeBy(WHAT_IS_LEFT_OF_THE_MINUTE)
-        assertTrue("but the minute does run out", within(A_MOMENT, asked))
+        assertEquals("but the minute does run out", 2, requests)
         watchingAgain.cancel()
     }
 
     @Test
     fun `a clock corrected backwards under the wait is not a wait that long`() = runTest {
-        val asked = Channel<Unit>(Channel.UNLIMITED)
-        val films = trending(refusing(asked))
+        val films = trending(refusing())
 
         val watching = launch { films.trending.collect {} }
-        assertTrue("the first reader pays for one attempt", within(A_MOMENT, asked))
-        settleUntil { films.lastProblem != null }
+        runCurrent()
+        assertEquals("the first reader pays for one attempt", 1, requests)
+        assertNotNull("and a refusal is what starts the wait", films.lastProblem)
 
         // The device had been running three days fast and has just reached a
         // time server for the first time. Nothing about the refusal changed --
@@ -275,7 +263,7 @@ class TmdbTrendingTest {
         // ever made, on a `@Singleton` that survives every teardown, with
         // nothing on screen that would ever say so.
         advanceTimeBy(AFTER_A_FAILURE + 1)
-        assertTrue("the wait is a minute, not the size of the jump", within(A_MOMENT, asked))
+        assertEquals("the wait is a minute, not the size of the jump", 2, requests)
         watching.cancel()
     }
 
@@ -294,73 +282,49 @@ class TmdbTrendingTest {
         assertEquals(2, store.read()?.movies?.size)
     }
 
-    private fun TestScope.trending(engine: MockEngine, store: TrendingStore = InMemoryStore()) =
-        TmdbTrending(
-            api = TmdbApi(client = tmdbClient(engine), token = "a-token-for-testing"),
-            clock = Clock { now },
-            zone = zone,
-            store = store,
-            scope = backgroundScope,
-        )
+    /**
+     * The repository, wired to a mock that answers **on this test's own
+     * scheduler**.
+     *
+     * That last part is the whole of why [requests] can be read straight after
+     * a [runCurrent] rather than waited for. `MockEngineConfig` extends
+     * `HttpClientEngineConfig`, and `HttpClientEngineBase` builds the engine's
+     * context out of it -- `config.dispatcher ?: ioDispatcher()` -- so handing
+     * it the test's own dispatcher puts the handler, and the continuation that
+     * resumes the flow behind it, on the scheduler this test drives. Left at
+     * the default the engine answers on Ktor's IO pool instead, and "the
+     * request has been made" becomes a fact about another thread that the
+     * virtual clock has no way to observe.
+     */
+    private fun TestScope.trending(
+        answering: MockRequestHandler,
+        store: TrendingStore = InMemoryStore(),
+    ) = TmdbTrending(
+        api = TmdbApi(
+            client = tmdbClient(
+                MockEngine(
+                    MockEngineConfig().apply {
+                        dispatcher = UnconfinedTestDispatcher(testScheduler)
+                        addHandler(answering)
+                    },
+                ),
+            ),
+            token = "a-token-for-testing",
+        ),
+        clock = Clock { now },
+        zone = zone,
+        store = store,
+        scope = backgroundScope,
+    )
 
-    private fun alwaysAnswering() = MockEngine {
+    private fun alwaysAnswering(): MockRequestHandler = {
         requests++
         respond(page(), HttpStatusCode.OK, json)
     }
 
-    /**
-     * Let work that is happening on another thread land on this one.
-     *
-     * `MockEngine` answers on its own dispatcher, so a failure travels back
-     * through a continuation the test scheduler has not been handed yet.
-     * [runCurrent] runs whatever has arrived **without moving the virtual
-     * clock**, which is the part that matters: the assertions below are about
-     * what the clock says, so nothing here may advance it. The pause is the
-     * only way to give the other thread a turn -- there is nothing on this
-     * scheduler to wait for, and waiting on the virtual clock would run the
-     * very retry the test is measuring.
-     */
-    private fun TestScope.settleUntil(landed: () -> Boolean) {
-        repeat(SETTLING_TRIES) {
-            runCurrent()
-            if (landed()) return
-            @Suppress("ForbiddenMethodCall")
-            Thread.sleep(1)
-        }
-        fail("the repository never settled")
-    }
-
-    /**
-     * Whether a request turns up in the next [tries] milliseconds of real time.
-     *
-     * The negative is the assertion that matters here, and a negative needs a
-     * bound that is real rather than virtual: waiting on the virtual clock
-     * would run the very retry the test is trying to prove has not happened
-     * yet. So this gives the flow and the engine's own dispatcher a fixed
-     * number of turns and reports what they did with them, moving the virtual
-     * clock not at all.
-     */
-    private fun TestScope.within(tries: Int, asked: Channel<Unit>): Boolean {
-        repeat(tries) {
-            runCurrent()
-            if (asked.tryReceive().isSuccess) return true
-            @Suppress("ForbiddenMethodCall")
-            Thread.sleep(1)
-        }
-        return false
-    }
-
-    /**
-     * A source that says no, and says so out loud.
-     *
-     * The counter alone cannot be read from the test: `MockEngine` answers on
-     * its own dispatcher rather than on the test scheduler, so "the request has
-     * been made" is not something the virtual clock knows. [asked] is how the
-     * test waits for it instead of guessing.
-     */
-    private fun refusing(asked: Channel<Unit>) = MockEngine {
+    /** A source that says no. */
+    private fun refusing(): MockRequestHandler = {
         requests++
-        asked.trySend(Unit)
         respondError(HttpStatusCode.InternalServerError)
     }
 
@@ -417,12 +381,3 @@ private const val WHAT_IS_LEFT_OF_THE_MINUTE = AFTER_A_FAILURE - WATCHING_GRACE_
  * silence measured in days rather than in minutes.
  */
 private const val A_CORRECTION_IN_DAYS = 3L
-
-/** A second of real milliseconds, which is a very long time for a mock to answer in. */
-private const val SETTLING_TRIES = 1_000
-
-/**
- * Long enough that a mock answering on another thread has certainly had its
- * turn, short enough that spending it twice is not felt.
- */
-private const val A_MOMENT = 300

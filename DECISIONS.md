@@ -3304,3 +3304,125 @@ dispatcher 的讀取與一條「這次是誰在開車」的判斷，而且第 63
   重做的方法寫在上面：`visible = true` ＋ `Surface(color = Color(0xFFFF00FF))`，
   `animator_duration_scale=10`，`screenrecord` 之後 `ffmpeg -vf fps=30`，逐幀數洋紅像素。
 - **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。
+
+---
+
+## 65. mock 的回答一直落在 Ktor 的 IO pool 上，所以那兩個測試只好用真實時間等它
+
+**做了什麼** —— `TmdbTrendingTest` 建 `MockEngine` 的地方多一行：
+
+```kotlin
+MockEngine(
+    MockEngineConfig().apply {
+        dispatcher = UnconfinedTestDispatcher(testScheduler)
+        addHandler(answering)
+    },
+)
+```
+
+於是 `settleUntil`／`within` 兩個 `Thread.sleep(1)` 迴圈、`asked: Channel<Unit>`、
+`A_MOMENT`、`SETTLING_TRIES` 全部拿掉，兩個測試改成 `runCurrent()` 之後直接讀 `requests`。
+**生產程式碼一行都沒有動。**
+
+---
+
+### 原本那兩個迴圈在買什麼，以及它花了多少
+
+原本的 KDoc 講得沒有錯：**`MockEngine` 在自己的 dispatcher 上回答**，
+所以「請求已經發出去了」不是虛擬時鐘知道的事；而這兩個測試的斷言全都是關於時鐘的，
+不能用 `advanceTimeBy` 去等——那會把它們正要證明「還沒發生」的那次重試跑掉。
+剩下的只有真實時間。
+
+它的帳單量得出來。`the minute a refusal buys is not spent by the reader coming back`
+這一個測試，在這台機器上：
+
+| | 這個測試 | 整個 class |
+|---|---|---|
+| 改之前（`--rerun-tasks`） | **4.744 s** | 8.286 s |
+| 改之後 | **0.035 s** | 2.585 s |
+
+4.744 秒是 `assertFalse(within(A_MOMENT, asked))` 的價錢：**證明一件事沒有發生，
+只能把預算花光**，所以每一次綠燈都付全額。而 `A_MOMENT = 300` 那句 KDoc 寫的是
+「300 毫秒」，實際上它是**迴圈次數**：`Thread.sleep(1)` 在這台 Windows 上一次約
+15.8 毫秒（4.744 s ÷ 300），所以那個「一瞬間」是四秒七。同樣的算法套到
+`SETTLING_TRIES = 1_000` 是**十五秒**——`runTest` 的預設上限是六十秒，
+一個 helper 就吃掉四分之一。
+
+---
+
+### 為什麼現在可以不必
+
+`MockEngineConfig` 繼承 `HttpClientEngineConfig`，而 3.5.1 的
+`HttpClientEngineBase`（sources jar，`ktor-client-core-jvm-3.5.1-sources.jar`）
+自己寫著：
+
+```kotlin
+override val dispatcher: CoroutineDispatcher by lazy { config.dispatcher ?: ioDispatcher() }
+
+override val coroutineContext: CoroutineContext by lazy {
+    SilentSupervisor() + dispatcher + CoroutineName("$engineName-context")
+}
+```
+
+`MockEngine.execute` 用 `withContext(dispatcher + callContext)` 跑 handler，
+`createCallContext` 又是拿 `coroutineContext` 疊出來的。
+**兩條路都通到 `config.dispatcher`**，所以把它換成測試自己的 dispatcher，
+handler 與它後面那條讓 flow 醒過來的 continuation 就都落在這個測試驅動的 scheduler 上。
+`ioDispatcher()` 是預設值，不是硬寫死的——KDoc 說的「在自己的 dispatcher 上回答」
+一直都是**沒有設定時**的行為。
+
+---
+
+### 控制組：這一行真的是關鍵，不是「一次剛好夠」
+
+換了 dispatcher 之後一次 `runCurrent()` 就夠，這件事本身不構成證據——
+也許本來一次就夠，只是原本的迴圈看不出來。所以跑了一次對照：
+**把預算壓到一次（`SETTLING_TRIES = 1`、`A_MOMENT = 1`），其他不動。**
+
+| | 結果 |
+|---|---|
+| 有 `dispatcher = UnconfinedTestDispatcher(testScheduler)` | 11 個全綠 |
+| 拿掉那一行 | **2 個紅**，兩個都停在 `the first reader pays for one attempt` |
+
+紅的正是 `the minute a refusal buys is not spent by the reader coming back` 與
+`a clock corrected backwards under the wait is not a wait that long`——
+就是原本需要真實時間的那兩個。**沒有那一行，第一次 `runCurrent()` 的時候請求還沒發生；
+有那一行，它已經發生了。**
+
+---
+
+### 測試還抓不抓得到它名字上寫的東西
+
+把等待方式換掉，最容易換來的是「測試變安靜」。所以照 `AGENTS.md` 審測試的第四條，
+逐一把生產程式碼打破，確認它們還會紅（每次只打破一處，跑完復原）：
+
+| 打破 `TmdbTrending` 的哪裡 | 哪個測試紅 | 停在哪一句 |
+|---|---|---|
+| 失敗時不寫 `refusedAt = clock.now()` | 那一分鐘的測試 | `coming back to the feed is not a reason to ask again expected:<1> but was:<2>` |
+| `whatIsLeftOfTheWait()` 回整整一分鐘而不是剩下的 | 同上 | `but the minute does run out expected:<2> but was:<1>` |
+| 拿掉 `served < 0` 那道 guard | 時鐘倒退的測試 | `the wait is a minute, not the size of the jump expected:<2> but was:<1>` |
+
+三個都紅在**名字對得上的那個測試、對得上的那一句**。
+第二列尤其是重點：那一句的註解本來就寫著「這是全檔唯一會注意到的斷言」，
+改寫之後這句話還是真的。
+
+---
+
+**取捨與限制**
+
+- **`assertFalse(within(...))` 換成 `assertEquals(1, requests)` 不是同一句話。**
+  原本說的是「在大約四秒七的真實時間裡沒有發生」，現在說的是「把這一刻所有到期的工作
+  都跑完之後沒有發生」。後者精確，但它只在**沒有任何工作落在 scheduler 以外**時等價——
+  而那正是這一行 dispatcher 換來的前提。哪天有東西又跑到別的執行緒上，這個斷言會安靜地
+  變弱，而不是變紅。
+- **`UnconfinedTestDispatcher` 是急切執行**：handler 在呼叫端的執行緒上當場跑完，
+  順序跟真實 IO 不一樣。這裡量的是「有沒有發出請求」與「什麼時候發」，兩者都不依賴
+  那個順序；**但這個檔案不再能觀察到任何跟排程順序有關的競態**，以前也不能，只是理由不同。
+- **只對 `MockEngine` 成立。** app 走的是 OkHttp，那條路一行都沒動，
+  所以這裡什麼都沒有證明關於真實引擎的事。
+- **`@Suppress("ForbiddenMethodCall")` 一起走了，而它本來就沒有在抑制任何東西**：
+  `config/detekt/detekt.yml` 沒有開這條規則，detekt 預設也不開它（它需要 type resolution）。
+  這不是這次改動的理由，是順手清掉的東西。
+- **上面每個秒數都是這台機器（Windows、Android Studio jbr）跑一次的結果**，
+  不是多次取樣。CI runner 上的絕對值會不同；會不同的是分子分母**一起**變，
+  4.744 → 0.035 這個比例才是這一則的內容。
