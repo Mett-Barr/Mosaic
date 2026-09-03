@@ -2764,3 +2764,173 @@ a 與 b；但**它描述的那個現象正好就是 b 的代價**，而幀證實
 - **一樣沒有截圖測試。** 上面每一句都是 `animator_duration_scale=10` 下錄影、
   用 `ffmpeg -fps_mode passthrough` 抽出實際被捕捉的每一幀看出來的，
   兩個候選在同一篇文章、同一個點擊座標上各錄一次。
+
+---
+
+## 61. 起霧與毛毛雨本來畫的是同一種東西——兩片點陣
+
+**症狀** —— 裝置上 24dp 看，`Sky.FOG` 的 `BlurOn` 是二十四顆由小到大排成一片的點，
+`Sky.DRIZZLE` 的 `Grain` 是八顆同樣大的點（兩個數字都是從渲染出來的圖上數的）。
+**兩個都不像天氣，兩個都像
+「圖片還沒載進來的那塊灰底」**——開發者原話是 it looks like a placeholder image。
+而且它們**彼此**也撞：一片細點陣旁邊一片粗點陣，是同一個圖案的兩個密度。
+
+**根因** —— 兩個都是照名字挑的。`Grain`（顆粒）、`BlurOn`（模糊）唸起來都對，
+畫出來都是點陣，而 `material-icons-extended` 這一包是舊的 Material Icons 而非
+Material Symbols：裡面**沒有** `Foggy`、`Rainy`、`Snowing` 這些天氣字面。
+只要照名字挑，就會挑到「語意最接近但畫面是抽象圖案」的那一顆。
+
+**選了** —— 把 aar 從 `~/.gradle/caches/modules-2` 解開、列出 `Icons.Outlined` 底下
+全部 2084 個名字（另有 139 個在 `automirrored` 子套件裡），把所有可能的候選丟進一個
+拋棄式畫面裝到裝置上，用截圖比：
+
+| Sky | 之前 | 現在 |
+|---|---|---|
+| `FOG` | `BlurOn` | **`Waves`** |
+| `DRIZZLE` | `Grain` | **`WaterDrop`** |
+| `RAIN` | `WaterDrop` | **`Shower`** |
+
+其餘五個（`WbSunny`／`Cloud`／`AcUnit`／`Thunderstorm`／`QuestionMark`）一個字都沒動——
+它們本來就各自是唯一的輪廓。
+
+**霧改成疊起來的橫線**，因為天氣圖上「看不透的空氣」就是畫成水平層次，
+而八個裡面**沒有第二個是由橫線構成的**。
+
+**毛毛雨與雨改成「一滴」對「一整片正在落下」**。這兩個在 domain 裡分開的理由是
+「其中一個決定你要不要帶外套」，而**水量多寡**才說得出這句話；
+原本那組（一片點 vs 一滴）是同樣多的墨水換個排法，說不出來。
+
+**最擔心的那一對，實際比出來不是它** —— 事前認定會撞的是毛毛雨對雨。
+截圖上它們是「一個大的封閉水滴輪廓」對「一個小圓頂加六顆小點」，輪廓沒有任何共用，
+一眼分得開。**真正撞在一起的是霧對毛毛雨**，而那一對事前沒有被懷疑過。
+
+**當時還考慮**
+
+- **`Dehaze`（三條粗橫線）當霧。** 它正好是 WMO 的霧符號 ≡，語意最正。
+  沒選：在 Android 上那就是 hamburger menu，天氣列裡出現一個選單圖示比出現一片點陣更奇怪。
+- **`Air`（兩道風的曲線）當霧。** 截圖上它讀作「風」而不是「看不透」。
+- **`Umbrella` 當雨。** 24dp 下那把傘是收合的，輪廓細長帶一個尖，
+  截圖上先讀到的是一支筆尖，要知道它叫 Umbrella 才看得出是傘。
+- **`Cyclone` 當雷雨。** 沒有理由換掉 `Thunderstorm`，它是這一包裡唯一畫對的天氣圖。
+- **`Water` 當霧。** 跟 `Waves` 幾乎同一顆，波幅小一點；選了辨識度高的那顆。
+- **把毛毛雨與雨對調（`Shower` 給毛毛雨、`WaterDrop` 給雨）。**
+  沒選：方向反了，一整片落下的水比一滴多。
+
+**取捨與限制**
+
+- **`Shower` 是浴室的蓮蓬頭，這件事沒有被辯掉。** 單獨看它就是蓮蓬頭。
+  選它的理由是這一排的**上下文**——太陽、雲、霧、水滴、雪花、雷雨雲之間，
+  它是唯一「水正在往下掉」的輪廓。另外 `OpenMeteoMapper` 的 WMO 80-82 是 rain showers，
+  而那三個碼落在的正是 `Sky.RAIN` 這條分支，所以連字面也是來源自己的字。
+- **`Waves` 也可能被讀成「海」。** 同樣靠上下文，同樣沒有更好的候選。
+- **這一則沒有自動化的視覺檢查，但不是不可能有。** 一個「八個 `ImageVector` 互不相同」
+  的測試改動前就是綠的——它抓不到這種撞法；而 **screenshot／golden test 抓得到**，
+  它可以把 20dp／24dp 下真正畫出來的像素釘住，讓「兩片點陣」再被引入時變紅。
+  本專案沒有那一層（README 的已知限制裡本來就寫著），所以這裡靠的是人看。
+  **「不可能測」是講過頭了，正確的說法是「這個 repo 目前沒有在測」。**
+- **`OpenMeteoMapper` 那句話現在有測試釘著。** 註解拿 WMO 80-82 是 rain showers 當
+  `Shower` 的理由之一，而原本的測試只直接斷言 81；新增的
+  `all three shower codes are rain` 三個都斷言，並且把 82 從分支拿掉驗證過它會紅。
+- **只在一台 420dpi 的模擬器上、只在淺色主題下看過。**
+  沒有在深色、沒有在低密度、沒有在真機上驗。
+
+---
+
+## 62. 讓 bar 留到被蓋住的那個做法試出來了，代價是文章落定後它自己彈回來
+
+> **這一則接在第 58 則「取捨與限制」那兩條後面，不改寫它。**
+> 58 則留下兩個已知缺陷（去程 bar 彈一下、回程閃一下）並寫著這是這次改動的價錢。
+> 這一則是照它指的方向真的做了一次、量了、然後**放棄**的紀錄。程式碼一行都沒有留下。
+
+**想法** —— 58 則否決的是 `visible = showsTheBar() || isTransitionActive`，
+理由是**上升緣**：堆疊在點下去那一幀就說「沒有 bar」，而 `isTransitionActive` 要等
+shared element 在 layout pass 配對成功才變 true，中間那兩三幀 bar 會先掉再回來。
+
+那個理由只否決了「用 OR」，沒有否決「用 `isTransitionActive` 當界線」。
+所以這次補上一段**橋**：從堆疊改變的那一幀起先按住畫面上原本的值，
+等 `isTransitionActive` 真的亮過再放手。橋用**幀**而不是毫秒計數，因為要等的是一次
+layout pass，而 layout pass 不會因為開發者選項把動畫拉長十倍就跟著變慢。
+
+規則寫成一句話是：**堆疊說「要不要」，overlay 說「什麼時候可以照做」。**
+`SharedTransitionLayout` 在 `Scaffold` 外面（第 42 則），所以會飛的矩形畫在 bar 之上——
+理論上「文章還在 overlay 裡」正好就是「bar 現在是被蓋住的」。
+
+**做了，而且量得出它有效的那一半** —— 為了分辨「bar 被拿掉」與「bar 被蓋住」
+（兩者在錄影裡長得一模一樣，因為蓋住它的正是同一張照片），
+把 `DestinationBar` 的 `Surface` 暫時塗成洋紅，再錄一次
+（`animator_duration_scale=10`、`screenrecord`、`ffmpeg -vf fps=30`），
+逐幀量洋紅像素佔那一條的比例：
+
+- **去程開頭修好了。** 原本：f52–f56 有 bar，**f58 bar 整條消失**，露出的是 feed 自己的
+  卡片照片——文章的矩形要到 f66 才長到那裡，中間八幀是「bar 走了、文章還沒到」。
+  加了橋之後：f55–f63 洋紅 0.77（bar 在原地），f64 起降到 0.08，
+  **而降下去的原因是矩形蓋上來，不是 bar 被拿掉**。
+
+**但是它在另一端弄壞了一件本來沒壞的事** —— 洋紅在 **f227–f231 回到 0.77**：
+文章已經完全落定、全螢幕、不動了，而**那條 bar 不透明地蓋在它上面五幀**，
+到 f232 才消失。
+
+**量到的事實：那五個擷取樣本裡，bar 畫在文章上面。** overlay 是畫在 `Scaffold` 之上的
+（第 42 則），所以只要看得見洋紅，那一份文章就不是由 overlay 畫的。
+**這證明的是「有一段遮不到的空窗」，不證明卡片是因為自己那條彈簧跑完才離開 overlay。**
+
+**推定原因，讀 compose-animation 1.11.4 的原始碼得到的** ——
+`SharedTransitionScope.kt` 的 `updateTransitionActiveness()` 是
+`isActive ||= element.foundMatch && element.isAnimating()`，對**所有 shared element** 取
+OR；而 `BoundsAnimation.kt` 的 `isRunning` 是
+
+```kotlin
+var parent: Transition<*> = transition
+while (parent.parentTransition != null) parent = parent.parentTransition!!
+return parent.currentState != parent.targetState
+```
+
+——它一路走到**根** `Transition`，回報的是「這棵樹整個落定了沒有」。
+所以旗標撐著的原因不必是任何一條 shared bounds：**掛在同一棵樹上的任何一個動畫都算**，
+包含 `ArticleMotion` 裡那條圓角的 `animateDp`——它掛在 `AnimatedVisibility` 的
+transition 上，而那是同一個根的子節點。
+**本檔先前寫「它理當不算」，那是錯的，而這是第二個模型讀原始碼指出來的。**
+
+**能真正關掉這件事的 signal 是 per-key 的「這一張卡片的 bounds 停了沒有」，
+而 public API 沒有。** `SharedContentState.isMatchFound` 只說配對成立，不說動畫結束
+（第 43 則已經踩過它的時序）。剩下的一條路是**讓 app 自己持有那個 `Transition`**，
+用同一個 `isIdle` 同時決定卡片與 bar——那要把 `NavDisplay` 的動畫接管過來，
+代價遠大於這兩個缺陷。
+
+**這正是不能接受的那種交換** —— 原本的缺陷是「chrome 太早離開」，
+新的缺陷是「chrome 離開之後又回來一下」，而後者正是第 58 則在回程那一端
+已經記下來的、最刺眼的那一種。把去程的彈跳換成去程結尾的閃光不是進展。
+
+**當時還考慮**
+
+- **只修回程那個閃光**（bar 的「出現」也押到轉場結束）。同一個五幀的差會反過來咬：
+  文章縮回卡片、離開 overlay 之後，`isTransitionActive` 還要五幀才落下，
+  那五幀是「feed 已經全畫出來但底下沒有 bar」。換一種閃法而已。
+- **改押在卡片自己的 `SharedContentState.isMatchFound` 上。** 那個狀態屬於
+  entry 裡面的元素；`:navigation` 要拿到它得用同一把 key 再 `rememberSharedContentState`
+  一次，而同一把 key 出現兩份會壞掉配對本身。
+- **等固定幀數之後就放手**（不等旗標落下）。那是把彈跳往後挪幾幀，不是消掉它，
+  而且那個幀數沒有任何東西可以校準。
+- **Navigation 3 有沒有現成的「轉場進行中」？** 沒有。翻過 `navigation3-ui` 1.1.4 的
+  public API：`SceneState` 只給 `currentScene`／`previousScenes`／`entries`，
+  沒有任何一個講進度或落定。
+- **`ExitTransition.KeepUntilTransitionsFinished`。** 名字完全對，但它是
+  `AnimatedContentTransitionScope` 的擴充，而且 compose-animation 1.11.4 的原始碼在
+  它的定義上直接寫著理由：*"Keep this type of exit transition internal and only expose it
+  in AnimatedContent, as holding only makes sense when there's enter and exit at the same
+  time... such as AnimatedVisibility, holding would not be meaningful."* 這裡是
+  `AnimatedVisibility`，拿不到。
+
+**結論** —— **兩個缺陷都留著，程式碼回到第 58 則的狀態。**
+它們小、已經被誠實地寫下來，而已知的每一種修法都是拿一個閃光換另一個。
+這一則存在的意義是下一個人不必再走一次：**`isTransitionActive` 這條路量過了，
+它在起點是對的，在終點差五幀。**
+
+**取捨與限制**
+
+- **只在一台模擬器上、只量了一次去程與一次回程。** 上面每個幀號都來自那一份錄影。
+- **「五幀」是 `animator_duration_scale=10` 下、`ffmpeg -vf fps=30` 抽出來的
+  五個擷取樣本**，不等於 Compose 畫了五個 frame，也沒有在 scale=1 下重量。
+  它只說明「這段空窗不是零」，不說明它有多長。
+- **洋紅那一版沒有進 commit**，所以上面的證據不可重跑，只能重做。
+- **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。

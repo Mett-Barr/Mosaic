@@ -57,6 +57,24 @@ class OpenMeteoMapperTest {
         assertEquals(Sky.THUNDERSTORM, skyFor(95))
     }
 
+    /**
+     * The three codes the feed's rain icon is chosen by.
+     *
+     * `Sky.RAIN` draws a head of water on its way down rather than a single drop,
+     * and the argument for that picture is partly that this branch is where the
+     * source's own *showers* land. That argument is only as good as the branch:
+     * 80, 81 and 82 are WMO's light, moderate and violent rain showers, and if
+     * one of them were ever moved somewhere else the picture would start
+     * describing weather the app no longer files here. The test above happens to
+     * assert 81; this one is about the range, and says why it matters.
+     */
+    @Test
+    fun `all three shower codes are rain, which is what the rain icon is drawn from`() {
+        assertEquals(Sky.RAIN, skyFor(80))
+        assertEquals(Sky.RAIN, skyFor(81))
+        assertEquals(Sky.RAIN, skyFor(82))
+    }
+
     @Test
     fun `a code nobody has heard of is a sky nobody can name`() {
         assertEquals(Sky.UNKNOWN, skyFor(4242))

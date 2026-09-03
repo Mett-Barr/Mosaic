@@ -290,3 +290,42 @@ force-stop → 重開），六個 must-have 在裝置上都成立，同時看到
 **這比一份文字審查更接近「有人反對過」**，因為畫面不會替我圓場。
 它換不掉的是 Codex 唯一的價值來源：另一個實驗室的盲區。三則的「取捨與限制」
 裡各自寫了它們現在依賴而沒有東西在檢查的事。
+
+---
+
+## 天氣圖示與 bar：這一輪有第二意見，而且它抓到我讀錯了原始碼
+
+前一則寫的是 Codex 連續四次沒有產出。**這一輪它產出了**，而且抓到的東西不是文字問題。
+
+**派工方式**（跟前一輪失敗的那兩次差在哪裡，記下來以免下次又試錯）：
+
+| | |
+|---|---|
+| 任務書 | 3.2KB，寫成檔案再用 `"$(cat .codex-task.md)"` 餵，**不是** 31KB 走位置參數 |
+| 旗標 | `--model gpt-5.6-luna -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox -o .codex-review.md` |
+| stdin | `< /dev/null`（沒有這個會卡在 `Reading additional input from stdin...`） |
+| 耗時 | 約 28 分鐘。中途 log 有兩段停止成長，看起來像卡死，實際是在推理——**用 CPU 時間判斷，不要用 log 判斷** |
+
+任務書明寫「你的任務是找出反對意見，不是核可」，並列出五條**要它去攻擊的具體主張**，
+每一條都指名要它自己去讀哪個檔、跑什麼指令核對。
+
+### 它說了什麼、我怎麼做
+
+| 它說的 | 我怎麼做 |
+|---|---|
+| **`DECISIONS.md` 62 寫「圓角那條 `animateDp` 掛在 `AnimatedVisibility` 上，理當不算」是不對的**——`BoundsAnimation.isRunning` 會一路走到**根** `Transition` 比較 `currentState != targetState`，同一棵樹上任何一個動畫都會把旗標撐著 | **原封不動接受。**去 `compose-animation` 1.11.4 的原始碼核對，`SharedTransitionScope.updateTransitionActiveness()` 與 `BoundsAnimation.isRunning` 兩段都跟它說的一樣。**我當時是照直覺寫的，沒有讀那一段。** 62 則改寫成「量到的事實／推定原因」兩段，並把原始碼貼進去 |
+| 62 則的「根因」語氣太滿，洋紅的證據只證明有 occlusion gap，不證明卡片是因為自己的彈簧跑完才離開 overlay | **接受。**標題以外全部改寫，`根因` 降為 `推定原因` |
+| 「五幀」是 30fps 擷取樣本，不等於 Compose 畫了五個 frame | **接受。**兩處都改成「五個擷取樣本」，並說明它只證明空窗不是零 |
+| 61 則的「這一則沒有測試，而且不可能有」是過度陳述——screenshot／golden test 抓得到 dot-field 再被引入 | **接受。**改成「這個 repo 目前沒有在測」，並寫明 golden test 做得到 |
+| 註解拿 WMO 80-82 當 `Shower` 的理由，但測試只直接斷言 81，82 沒有覆蓋 | **接受，補一個新測試**（不動既有那個）。把 82 從 `OpenMeteoMapper` 的分支拿掉跑過一次，只有新測試變紅，`AssertionError at OpenMeteoMapperTest.kt:75` |
+| `Waves`／`Shower` 在語義上仍然不是天氣圖示；若驗收條件是「準確表示天氣」應升級為 should-fix | **接受批評，維持選擇。**這一包裡沒有天氣專用的 vector，自訂圖示超出這次的範圍；61 則的「取捨與限制」本來就寫著蓮蓬頭這件事沒有被辯掉 |
+| icon API 沒問題、沒有 a11y regression、沒有 stale fixture | 三條核對過，無動作 |
+
+**這一輪最值得記的**：它唯一真正翻掉的東西，是我**沒有去讀原始碼就寫下的一句因果**。
+我讀了 `SharedTransitionScope` 的 KDoc，沒有讀 `BoundsAnimation`，於是把「掛在別的
+transition 上」直接當成「不影響這個旗標」。**同一個模型再讀一次會沿用我的假設，
+因為那句話讀起來很合理**——換一個模型才會去把那個 `while (parent.parentTransition != null)`
+的迴圈翻出來。這跟前面那次 `Instant.parse` 的教訓是同一件事，只是換了個地方。
+
+**它沒有擋下任何 commit**，符合 `AGENTS.md` 的「建議而非閘門」；上面每一條的處置都在
+這張表裡，包括我維持原判的那一條。
