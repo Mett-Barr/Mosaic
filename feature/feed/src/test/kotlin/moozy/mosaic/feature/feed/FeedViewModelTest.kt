@@ -150,7 +150,14 @@ class FeedViewModelTest {
         // The rounding happens here rather than in the mapper: what a number
         // looks like is a decision about this screen.
         assertEquals("8.1", shown.rating)
-        assertEquals("https://image.tmdb.org/t/p/w342/poster.jpg", shown.posterUrl)
+        // Against the fixture rather than against the string spelled out again:
+        // how that URL is built is `TmdbMovies.toMovie`'s decision and is
+        // asserted there, so repeating it here would only say that a literal
+        // equals itself. What is left worth saying is that this layer does not
+        // drop it -- `MovieStrip` draws a grey placeholder tile for a null, so a
+        // poster lost in the mapping is a strip of empty rectangles that no
+        // other test in this module would notice.
+        assertEquals(film().posterUrl, shown.posterUrl)
     }
 
     @Test

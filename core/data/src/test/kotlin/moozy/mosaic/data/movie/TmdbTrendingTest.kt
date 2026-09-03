@@ -69,10 +69,19 @@ class TmdbTrendingTest {
         val films = trending(alwaysAnswering())
 
         films.trending.test {
-            assertEquals("nothing is known before the first answer", emptyList<Movie>(), awaitItem())
+            // `stateIn`'s declared initial value, which is the literal
+            // `emptyList()` written three lines into the repository. Asserting
+            // it back would be asserting that literal, so it is only consumed.
+            awaitItem()
             assertEquals(listOf("How to Train Your Dragon", "Sinners"), awaitItem().map { it.title })
             cancelAndIgnoreRemainingEvents()
         }
+
+        // The other half of what this test is named for. `nobody watching is
+        // nobody's data spent` proves the zero; without this nothing proved the
+        // one, and the counter is the only thing a policy that quietly became
+        // "ask every time" would move -- the card would still be full.
+        assertEquals("one watcher, one request", 1, requests)
     }
 
     @Test
