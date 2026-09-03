@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import moozy.mosaic.domain.model.Clock
@@ -210,10 +209,14 @@ class TmdbTrendingTest {
         val films = trending(refusing())
 
         val watching = launch { films.trending.collect {} }
+        // [runCurrent] runs what is due without moving the virtual clock, so a
+        // request counted after it is a request made at virtual time zero.
+        // "Straight away" is that, and it needs no separate assertion: an
+        // implementation that waited before its first attempt would leave the
+        // count at nought here rather than leave the clock somewhere else.
         runCurrent()
-        assertEquals("the first reader pays for one attempt", 1, requests)
+        assertEquals("the first reader pays for one attempt, and pays now", 1, requests)
         assertNotNull("and a refusal is what it paid for", films.lastProblem)
-        assertEquals("and pays for it straight away", 0L, currentTime)
 
         // Both clocks move, because on a device they are the same clock: the
         // scheduler's, which decides when the flow wakes, and the reader's,
