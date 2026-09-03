@@ -2677,3 +2677,90 @@ f062 更圓、f064 接近滿——半徑跟著矩形一起縮。**回程這個�
 - **一樣沒有截圖測試。** 上面每一句都是 `animator_duration_scale=10` 下錄影、
   用 `ffmpeg -fps_mode passthrough` 抽出實際被捕捉的每一幀看出來的，
   不是任何一個會自己跑的檢查。
+---
+
+## 60. 標題本來就只有一層淡，第 47 則把僅有的那一層也拿掉了
+
+> **這一則推翻第 47 則的結論，並更正它的算術，不改寫它。**
+> 47 則說標題上疊了三層 alpha、拿掉最裡面那層；**結論與理由都不成立**。
+> 它的出發點（同一段文字被兩種東西同時影響）是對的，錯的是它算的那三層裡，
+> 有兩層根本到不了那段文字。47 則原文保留，history 是交付物。
+
+**症狀** —— 轉場途中**同一個標題被畫成兩份**：一份 `titleMedium`（卡片的、兩三行封頂）、
+一份 `headlineSmall`（文章的、不封頂），兩份都全黑不透明、互相錯開。
+讀起來像重曝。來源那一行同樣。
+
+**根因** —— 47 則寫的三層是：
+
+1. `CardBecomesArticle` 掛在 `NavDisplay.TransitionKey` 上的 `fadeIn()`（整個 scene）
+2. `sharedArticleCard` 自己的 `fadeIn()`／`fadeOut()`（整個容器子樹）
+3. 標題自己那一層
+
+**第 1、2 層到不了第 3 層。** 一個配對成功的 shared element 會被抬進
+`SharedTransitionLayout` 的 overlay，而文件寫的是它
+*"will escape the parent's bounds and its layer transformations"*——
+**alpha 就是其中一個 layer transformation**。祖先那兩層 alpha 掛在 scene 與容器的
+graphics layer 上，overlay 是另一條繪製路徑，不經過它們。
+
+**這不是推論，畫面上一眼可見。** 把標題設成 `None`、其餘一個字不動，錄下來的中段那幾幀裡：
+
+- **兩份標題都是全黑的**
+- 旁邊那句 `"Requirements are being adjusted to reflect near-term mission needs."`
+  ——它不是 shared element，真的在那兩層底下——**正常地在淡入**
+
+同一幀、同一棵子樹、兩種行為。所以這行字上的淡從來只有一層，47 則拿掉之後是零層。
+
+而 `sharedBounds` **兩端都畫**（`SharedTransitionScope.kt` 裡
+`renderOnlyWhenVisible = false`，`sharedElement` 才是 `true`）。
+零層淡的兩端，就是兩份不透明的字。
+**那層淡不是裝飾，它就是「一份字溶進另一份字」這件事本身。**
+
+**選了（候選 a）** —— `sharedArticleTitle` 與 `sharedArticleAttribution` 都改回
+`enter = fadeIn(), exit = fadeOut()`。外層兩層一個都不動——它們本來就管不到這裡，
+拿掉只會讓摘要與返回箭頭（第 37 則）跟著壞。
+
+**候選 b：改用 `sharedElement`。兩個候選都建了、都錄了、看幀決定的。** ——
+`sharedElement` 只畫進場那一端，所以「兩份字」由構造上消失，而且兩端本來就是同一串字。
+它沒有 `resizeMode` 參數（`SharedTransitionScope.kt` 的簽章讀得到），代價是文字不會被
+`scaleToBounds` 縮放，而是被量進當下的動畫 bounds。
+
+**裝置上它更糟，而且不是理論上的更糟。** 飛行中段那幾幀，標題被切掉一整行。
+錄到的那一幀寫著
+
+```
+Wary of Artemis IV timeline,
+NASA is changing lunar
+```
+
+第三行 `spacesuit design` 整行不見，而且第二行是**從字的中間橫著切斷**的——
+文字一路重新換行、一路被裁，直到 bounds 追上為止。回程同理，只是換成卡片那一端的字級。
+
+官方那句 *"For `Text` composables, `ScaleToBounds` is recommended, as it avoids relayout
+and reflowing of text onto different lines"* 講的是 `resizeMode`，本來不能拿來裁決
+a 與 b；但**它描述的那個現象正好就是 b 的代價**，而幀證實了它。
+
+**一個柔和的殘影，比一句話少掉三個字好。選 a。**
+
+**來源那一行問了同一個問題，得到同一個答案** —— 它兩端也是同一串字、兩個字級，
+也一樣兩端都畫。第 39 則「Saved 那一端的字不一樣」在這裡不成立，因為
+**`SavedRow` 根本沒有呼叫 `sharedArticleAttribution`**：這個 modifier 唯一會配對到的一對，
+永遠是 feed 的卡片對文章。所以它跟標題同進退。
+
+**取捨與限制**
+
+- **`sharedArticleCard` 那層淡的作用範圍被講小了，但它沒有變小。** 它仍然蓋住整個子樹裡
+  每一樣**不是** shared element 的東西——摘要、按鈕、返回箭頭（第 37 則靠的就是它）。
+  變的只是「它也蓋住標題」這個從來不成立的說法。
+- **「整個轉場只有一次 cross-fade」這句話正式作廢。** 現在是三層各自淡：容器一層、
+  標題一層、來源那行一層。它們**不相乘**，因為它們畫在不同的 layer 上——
+  而這正是 47 則沒有算到的那件事。
+- **47 則觀察到的原始症狀（標題比摘要淡、到得比較晚）沒有被這一則解釋掉。**
+  用現在的模型，標題當時只有一層淡而摘要有兩層，標題應該**比較亮**才對。
+  當時的錄影沒有留下，無法重驗。**這一則只保證它現在是對的，不保證它解釋得了當時。**
+- **它現在依賴一件沒有東西在檢查的事**，跟 47 則留下的限制是同一件、方向相反：
+  日後任何人在 `sharedArticleCard` 裡面再加一個 shared element，
+  忘了給它自己的 enter／exit，那個東西就會被畫成兩份。KDoc 寫下了這件事，
+  但 KDoc 不是 lint 規則。
+- **一樣沒有截圖測試。** 上面每一句都是 `animator_duration_scale=10` 下錄影、
+  用 `ffmpeg -fps_mode passthrough` 抽出實際被捕捉的每一幀看出來的，
+  兩個候選在同一篇文章、同一個點擊座標上各錄一次。
