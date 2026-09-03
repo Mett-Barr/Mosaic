@@ -9,6 +9,9 @@ import androidx.paging.cachedIn
 import androidx.paging.map
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -20,10 +23,11 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import moozy.mosaic.domain.repository.ArticleRepository
+import moozy.mosaic.domain.repository.MovieRepository
 import moozy.mosaic.domain.repository.WeatherRepository
 
 /**
- * What the feed is showing, in two streams that have nothing to say to each
+ * What the feed is showing, in three streams that have nothing to say to each
  * other.
  *
  * [stories] is the list, and it is a stream of its own rather than a field on a
@@ -31,9 +35,13 @@ import moozy.mosaic.domain.repository.WeatherRepository
  * something in flight, not a value, and a data class reads its fields many times
  * over.
  *
- * [weather] is the other source, kept apart for the same reason it is drawn
- * apart: a card at the top of the screen has nothing to do with whether page
- * four arrived.
+ * [weather] and [movies] are the other two sources, kept apart for the same
+ * reason they are drawn apart: a card at the top of the screen has nothing to do
+ * with whether page four arrived, and neither has a row of posters.
+ *
+ * Keeping them apart is also what lets each keep its own idea of how long its
+ * answer is good for -- a grid the source names, a person pulling, and a
+ * calendar day. A single state object would have had to pick one.
  *
  * Nothing here holds "loading" or "empty" or "failed". Paging already reports
  * what its loads are doing, and [feedPhase] turns that into a screen where the
@@ -44,6 +52,7 @@ import moozy.mosaic.domain.repository.WeatherRepository
 class FeedViewModel @Inject constructor(
     private val articles: ArticleRepository,
     weather: WeatherRepository,
+    movies: MovieRepository,
 ) : ViewModel() {
 
     /**
@@ -71,6 +80,17 @@ class FeedViewModel @Inject constructor(
     val weather: StateFlow<WeatherHeadline?> = weather.current
         .map { reading -> reading?.headline() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WATCHING_GRACE), null)
+
+    /**
+     * The films, as words.
+     *
+     * A list rather than a nullable, because empty already says everything a null
+     * would: no key to ask with, a request that has not landed, and a day nobody
+     * could read all reach the screen as nothing to draw. One case, not four.
+     */
+    val movies: StateFlow<ImmutableList<MoviePoster>> = movies.trending
+        .map { films -> films.map { film -> film.poster() }.toImmutableList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(WATCHING_GRACE), persistentListOf())
 
     /** The reader asked for a newer list. */
     fun refresh() {

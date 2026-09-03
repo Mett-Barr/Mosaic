@@ -1,6 +1,5 @@
 package moozy.mosaic.feature.saved
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +19,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -30,10 +27,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.collections.immutable.persistentListOf
+import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.ArticleEnd
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 
 /**
@@ -47,6 +49,7 @@ import moozy.mosaic.domain.model.ArticleId
 fun SavedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
     viewModel: SavedViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -55,30 +58,40 @@ fun SavedScreen(
         onOpenArticle = onOpenArticle,
         onLetGo = viewModel::letGo,
         modifier = modifier,
+        bottomInset = bottomInset,
     )
 }
 
+/**
+ * [bottomInset] is how much of the bottom edge something above this screen covers.
+ * This screen reaches the display's edge and is told the number, because a list
+ * that stops short of the bar cannot scroll behind it -- so the list spends it on
+ * `contentPadding`, where the clearance travels with the last card, and the empty
+ * state spends it as padding, having nothing to scroll.
+ */
 @Composable
 fun SavedScreen(
     state: SavedUiState,
     onOpenArticle: (ArticleId) -> Unit,
     onLetGo: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
 ) {
     // Two branches because [SavedUiState] has two answers, and each one names
     // what it draws rather than describing it in place.
     when (state) {
-        SavedUiState.Empty -> EmptyState(modifier)
+        SavedUiState.Empty -> EmptyState(bottomInset, modifier)
 
-        is SavedUiState.Content -> SavedList(state, onOpenArticle, onLetGo, modifier)
+        is SavedUiState.Content ->
+            SavedList(state, onOpenArticle, onLetGo, bottomInset, modifier)
     }
 }
 
 /** Nothing kept yet, and what keeping something is for. */
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(bottomInset: Dp, modifier: Modifier = Modifier) {
     Box(
-        modifier.fillMaxSize().padding(24.dp),
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -96,11 +109,20 @@ private fun SavedList(
     state: SavedUiState.Content,
     onOpenArticle: (ArticleId) -> Unit,
     onLetGo: (ArticleId) -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        // The bar's height is added to the bottom rather than padded around the
+        // list, so the last card scrolls out from under the bar instead of
+        // stopping at a border the reader cannot see past.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 12.dp,
+            end = 16.dp,
+            bottom = 12.dp + bottomInset,
+        ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Standing rather than conditional: this screen cannot tell whether
@@ -153,6 +175,19 @@ private fun OfflineNote(modifier: Modifier = Modifier) {
  * The filled bookmark is the remove control. It is not decoration next to a
  * button: on this screen every row is saved, so the only thing the mark can
  * usefully do when tapped is stop being true.
+ *
+ * The card grows into the article the same way the feed's does, and two of the
+ * four parts stay behind. The picture, because a [SavedRow] carries none -- this
+ * list shows enough to recognise something the reader already chose, and what it
+ * does not show, it does not carry.
+ *
+ * The line above the title stays behind for a different reason, and a sharper
+ * one: it is not the same line. The feed and the article both write source and
+ * time -- `"The Verge · 2 hours ago"` -- and this row has only ever kept the
+ * source. Shared bounds would measure one of those and scale it to the other's
+ * width, so a reader would watch `"The Verge"` stretch across the gap the missing
+ * timestamp left. It cross-fades instead, which is what a line that changes its
+ * words should do (DECISIONS.md 39).
  */
 @Composable
 private fun SavedCard(
@@ -163,7 +198,11 @@ private fun SavedCard(
 ) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth(),
+        // The bounds first and the width after it, the same way round as the feed's
+        // cards and as the article screen: both ends of a shared rectangle have to
+        // agree about which modifiers decide the bounds and which measure what is
+        // inside them.
+        modifier = modifier.sharedArticleCard(article.id, ArticleEnd.IN_A_LIST).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
@@ -185,6 +224,7 @@ private fun SavedCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedArticleTitle(article.id),
                 )
             }
             IconButton(onClick = onLetGo) {
@@ -221,22 +261,10 @@ private val PreviewKept = SavedUiState.Content(
 )
 
 /**
- * Material's own colours, not the app's.
- *
- * `MosaicTheme` lives in `:core:ui`, and this module is allowed to depend on
- * `:core:domain` and nothing else -- `checkModuleDependencies` fails the build
- * over it, so a preview cannot buy its way past the rule. At runtime the theme
- * arrives through Compose from whoever applied it above, and a still render has
- * no whoever. So what the two below check is layout and contrast; the green, and
- * the wider corners the app draws, are somebody else's to get wrong.
+ * Nothing covers the bottom of a preview: there is no bar above it, so the
+ * clearance the real screen is handed is zero here rather than a guess at it.
  */
-@Composable
-private fun SavedPreviewTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme(),
-        content = content,
-    )
-}
+private val NoBar = 0.dp
 
 /**
  * One theme: a centred paragraph of `onSurfaceVariant`, which is the pairing
@@ -245,8 +273,8 @@ private fun SavedPreviewTheme(content: @Composable () -> Unit) {
 @Preview
 @Composable
 private fun EmptyStatePreview() {
-    SavedPreviewTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) { EmptyState(NoBar) }
     }
 }
 
@@ -256,13 +284,23 @@ private fun EmptyStatePreview() {
  * Worth two renders because three fills sit on top of one another here -- the
  * note on `surfaceContainerHigh`, the cards on `surfaceContainer`, both on
  * `background` -- and a scheme that flattens them takes the cards' edges with it.
+ *
+ * The app's own theme, now that this module can reach it. Until this commit these
+ * two previews drew Material's default palette, because `MosaicTheme` was on the
+ * other side of a module edge that did not exist -- so what they checked was
+ * layout and contrast, and the green was somebody else's to get wrong.
  */
 @PreviewLightDark
 @Composable
 private fun SavedListPreviews() {
-    SavedPreviewTheme {
+    MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            SavedList(state = PreviewKept, onOpenArticle = {}, onLetGo = {})
+            SavedList(
+                state = PreviewKept,
+                onOpenArticle = {},
+                onLetGo = {},
+                bottomInset = NoBar,
+            )
         }
     }
 }

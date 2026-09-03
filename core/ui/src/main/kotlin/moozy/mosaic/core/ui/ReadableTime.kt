@@ -1,6 +1,7 @@
 package moozy.mosaic.core.ui
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -21,3 +22,22 @@ fun readableTime(at: Instant, zone: ZoneId = ZoneId.systemDefault()): String =
 
 private val FORMAT: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH)
+
+/**
+ * Which day of the week, as a person would read it: `Tue`.
+ *
+ * English for the reason above, and it is the same mistake one column further
+ * along: a formatter with no locale reads the device's, and the weather card's
+ * strip would come out in a language the rest of the card is not in.
+ *
+ * Three letters rather than the whole word because it is a heading over a
+ * temperature, not a sentence -- and because "Wednesday" over "29°" would set
+ * the width of every column in the strip.
+ *
+ * No zone parameter: a [java.time.LocalDate] is already a date somebody is
+ * having, not a moment that has to be turned into one.
+ */
+fun readableWeekday(date: LocalDate): String = WEEKDAY.format(date)
+
+private val WEEKDAY: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("EEE", Locale.ENGLISH)

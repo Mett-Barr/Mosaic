@@ -683,29 +683,29 @@ const NODES = [
     job:"Android 的進入點，以及 Hilt 的組裝根。它不做任何畫面決定——連「哪個畫面通往哪個」都搬走了。",
     holds:[["MainActivity","開視窗、套主題、呼叫一個 composable"],["MosaicApp","@HiltAndroidApp"]] },
 
-  { id:"navigation", name:":navigation", kind:"android", label:"Android 函式庫", cx:288, cy:172, loc:"304 行",
+  { id:"navigation", name:":navigation", kind:"android", label:"Android 函式庫", cx:288, cy:172, loc:"437 行",
     job:"唯一知道「誰通往誰」的模組。三把 NavKey、整張導覽圖、上下兩條 bar 都在這裡。畫面之間的關係在這一層組裝，feature 自己不知道。",
-    holds:[["NavKeys","三個目的地的型別安全鑰匙"],["Mosaic()","NavDisplay 與整張 entryProvider"],["Screen()","TopAppBar 與底部導覽的外框"],["BackStack","goTo / goToDestination"]] },
+    holds:[["NavKeys","三個目的地的型別安全鑰匙"],["Mosaic()","SharedTransitionLayout、NavDisplay 與整張 entryProvider"],["Screen()","TopAppBar 與底部導覽的外框"],["BackStack","goTo / goToDestination"],["Transitions","橫向切換與容器轉場的 metadata"]] },
 
   { id:"coredata", name:":core:data", kind:"android", label:"Android 函式庫", cx:700, cy:172, loc:"1450 行",
     job:"所有跟外面世界打交道的事：網路、資料庫、檔案。它實作 domain 定義的介面，而它的實作類別全部是 internal——上面的模組看得到介面，看不到實作。",
     holds:[["SpaceflightNewsApi","文章 API"],["OpenMeteoApi + WeatherStore","天氣，一遠一近"],["SavedArticlesDatabase","Room 的表與 DAO"],["DataModule","六個 @Provides，整個 App 的組裝"]] },
 
-  { id:"feed", name:":feature:feed", kind:"android", label:"Android 函式庫", cx:132, cy:292, loc:"985 行",
+  { id:"feed", name:":feature:feed", kind:"android", label:"Android 函式庫", cx:132, cy:292, loc:"1006 行",
     job:"文章清單這個畫面。分頁交給 Paging 3，天氣卡跟文章是兩條互不相干的流。它只收 callback，不知道點下去會去哪裡。",
     holds:[["FeedScreen","有狀態與無狀態兩個多載"],["FeedViewModel","兩條流：stories 與 weather"],["ArticlePagingSource","一個世代的清單與去重"],["feedPhase()","從 Paging 的狀態推導出畫哪一種畫面"]] },
 
-  { id:"detail", name:":feature:detail", kind:"android", label:"Android 函式庫", cx:330, cy:292, loc:"569 行",
+  { id:"detail", name:":feature:detail", kind:"android", label:"Android 函式庫", cx:330, cy:292, loc:"595 行",
     job:"一篇文章的畫面，加上存起來與取消存的按鈕。它只問 repository 一次，不決定文章要從哪裡拿。",
     holds:[["DetailScreen","載入／內容／失敗三種"],["DetailViewModel","open、keep、letGo"],["ArticleView","給畫面看的字"]] },
 
-  { id:"saved", name:":feature:saved", kind:"android", label:"Android 函式庫", cx:528, cy:292, loc:"356 行",
+  { id:"saved", name:":feature:saved", kind:"android", label:"Android 函式庫", cx:528, cy:292, loc:"349 行",
     job:"存起來的清單。整個 App 唯一一個真正 local-first 的地方——它只讀資料庫，永遠不打網路。",
     holds:[["SavedScreen","清單或空狀態"],["SavedViewModel","一條可觀察的查詢"]] },
 
-  { id:"coreui", name:":core:ui", kind:"android", label:"Android 函式庫", cx:216, cy:412, loc:"194 行",
-    job:"跨畫面共用的東西。目前只有兩件：主題色票，和「兩個畫面必須對同一個時間格式有共識」的那個格式器。",
-    holds:[["MosaicTheme","深淺兩套色票"],["ReadableTime","時間怎麼讀給人看"]] },
+  { id:"coreui", name:":core:ui", kind:"android", label:"Android 函式庫", cx:216, cy:412, loc:"341 行",
+    job:"跨畫面共用的東西：主題色票、「兩個畫面必須對同一個時間格式有共識」的那個格式器，以及轉場用的兩個 scope——後者讓 feature 不必認識導覽函式庫也能參加共享元素。",
+    holds:[["MosaicTheme","深淺兩套色票"],["ReadableTime","時間怎麼讀給人看"],["ArticleMotion","轉場 scope 的 CompositionLocal 與三個語意化 modifier"]] },
 
   { id:"coredomain", name:":core:domain", kind:"kotlin", label:"純 Kotlin", cx:450, cy:502, loc:"300 行",
     job:"這個 App 認為世界長什麼樣。三個介面、幾個資料型別，沒有一行 Android。所有箭頭最後都指到這裡，而它不指向任何人。",
@@ -715,9 +715,10 @@ const NODES = [
 const EDGES = [
   ["app","navigation"], ["app","coredata"], ["app","coreui"], ["app","coredomain"],
   ["navigation","feed"], ["navigation","detail"], ["navigation","saved"], ["navigation","coredomain"],
+  ["navigation","coreui"],
   ["feed","coreui"], ["feed","coredomain"],
   ["detail","coreui"], ["detail","coredomain"],
-  ["saved","coredomain"],
+  ["saved","coreui"], ["saved","coredomain"],
   ["coredata","coredomain"],
 ];
 

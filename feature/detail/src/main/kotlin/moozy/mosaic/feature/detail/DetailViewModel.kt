@@ -8,7 +8,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.ArticleItem
@@ -24,10 +23,15 @@ import moozy.mosaic.domain.repository.SavedArticles
  * recomposition looks like from here -- does not send the same request twice.
  *
  * Where the article comes from is not decided here. [articles] is asked once and
- * answers from the copy the reader kept or from the network, whichever there is
- * (DECISIONS 30). [kept] is still needed, for a different question: not "which
- * copy of this article" but "is it kept right now", which is what the button
- * shows and what changes while the reader is looking at it.
+ * answers from the copy the reader kept, from the page the feed is showing, or
+ * from the network, whichever there is (DECISIONS 30, 41). [kept] is still
+ * needed, for a different question: not "which copy of this article" but "is it
+ * kept right now", which is what the button shows and what changes while the
+ * reader is looking at it.
+ *
+ * That question is watched rather than asked. It has its own query and its own
+ * answer, and putting a suspending read of it on the way to the article would
+ * hold an article this app already has behind news about something else.
  */
 @HiltViewModel
 class DetailViewModel @Inject constructor(
@@ -43,6 +47,21 @@ class DetailViewModel @Inject constructor(
     // whole thing to the store, and the screen was only given the words.
     private var holding: ArticleItem? = null
     private var loading: Job? = null
+
+    /**
+     * The reading list as it last arrived, so that "is this one kept" can be
+     * answered without asking for it again.
+     *
+     * The collector below is already watching that list; reading it a second time
+     * would be a second version of one fact, and -- the half that shows -- a
+     * suspending one. An article this app already has would still queue behind a
+     * query about something else, and the loading state that puts on screen is
+     * the one the card the reader tapped has nothing to grow into.
+     *
+     * Written and read on the same dispatcher: [viewModelScope] is Main-confined
+     * and so is every coroutine here.
+     */
+    private var keptNow: List<ArticleItem> = emptyList()
 
     fun open(id: ArticleId) {
         if (id == showing) return
@@ -72,6 +91,7 @@ class DetailViewModel @Inject constructor(
         // from somewhere else has to show up here too.
         viewModelScope.launch {
             kept.saved.collect { saved ->
+                keptNow = saved
                 val onScreen = _state.value
                 val id = holding?.id
                 if (onScreen is DetailUiState.Content && id != null) {
@@ -97,7 +117,11 @@ class DetailViewModel @Inject constructor(
                     holding = result.article
                     DetailUiState.Content(
                         article = result.article.view(),
-                        saved = kept.saved.first().any { it.id == result.article.id },
+                        // The list as it last arrived, not a fresh question about
+                        // it. The collector in `init` has been watching it since
+                        // this screen opened and will correct this the moment it
+                        // says something different -- which is what it is for.
+                        saved = keptNow.any { it.id == result.article.id },
                     )
                 }
                 // Nothing to fall back to from here. A reader who kept this one

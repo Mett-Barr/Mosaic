@@ -2,6 +2,7 @@ package moozy.mosaic.domain.model
 
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * The state of the sky, in the words a person would use.
@@ -23,6 +24,29 @@ enum class Sky {
 }
 
 /**
+ * One day the source has a forecast for.
+ *
+ * There is no temperature on it, only a [high] and a [low], because a day does
+ * not have one. A reading is a moment and can answer "how warm is it"; a day is
+ * a range, and picking a number out of it would be picking an hour without
+ * being able to say which.
+ *
+ * [date] is a calendar date rather than an instant for the same reason: the
+ * source forecasts a day in the place's own calendar, and "Tuesday" does not
+ * become more accurate by being given a time.
+ */
+data class ForecastDay(
+    val date: LocalDate,
+    val high: Int,
+    val low: Int,
+    val sky: Sky,
+) {
+    init {
+        require(high >= low) { "A day cannot be colder at its warmest than at its coldest." }
+    }
+}
+
+/**
  * One weather reading, for one place.
  *
  * Nothing about it resembles an article, which is the point of it being in this
@@ -34,6 +58,12 @@ enum class Sky {
  * [stepsEvery] is how often the source produces a new one. It comes from the
  * source rather than from this app, which is the whole point: asking more often
  * than a new value exists cannot produce a new value.
+ *
+ * [days] is what the days after this moment are expected to look like, today
+ * first. Empty is a real answer rather than a failure: a reading written down
+ * before this app asked for one has none, and a source that answered without
+ * one still answered. [temperature], [high] and [low] are today's and are not
+ * made out of it, so a missing forecast costs the forecast and nothing else.
  */
 data class Weather(
     val place: String,
@@ -43,6 +73,7 @@ data class Weather(
     val sky: Sky,
     val measuredAt: Instant,
     val stepsEvery: Duration,
+    val days: List<ForecastDay> = emptyList(),
 ) {
     init {
         require(place.isNotBlank()) { "A reading with no place is not a reading." }

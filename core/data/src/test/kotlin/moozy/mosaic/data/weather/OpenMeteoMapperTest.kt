@@ -1,7 +1,9 @@
 package moozy.mosaic.data.weather
 
 import java.time.Instant
+import java.time.LocalDate
 import kotlinx.serialization.SerializationException
+import moozy.mosaic.domain.model.ForecastDay
 import moozy.mosaic.domain.model.Sky
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -97,6 +99,48 @@ class OpenMeteoMapperTest {
         )
 
         assertEquals(Instant.parse("2026-09-01T10:30:00Z"), weather.measuredAt)
+    }
+
+    @Test
+    fun `three days of forecast become three days a reader can look at`() {
+        val weather = map(payload("/open-meteo-taipei-three-days.json"))
+
+        assertEquals(
+            listOf(
+                LocalDate.parse("2026-09-01"),
+                LocalDate.parse("2026-09-02"),
+                LocalDate.parse("2026-09-03"),
+            ),
+            weather.days.map { it.date },
+        )
+    }
+
+    @Test
+    fun `each day carries its own sky and its own two temperatures`() {
+        // No two days in the fixture share a value, so a mapper that read the
+        // first day three times could not pass any of the three assertions.
+        val weather = map(payload("/open-meteo-taipei-three-days.json"))
+
+        assertEquals(listOf(Sky.CLOUDY, Sky.RAIN, Sky.CLEAR), weather.days.map { it.sky })
+        assertEquals(listOf(32, 29, 33), weather.days.map { it.high })
+        assertEquals(listOf(25, 24, 26), weather.days.map { it.low })
+    }
+
+    @Test
+    fun `a daily block that names no days still leaves a reading`() {
+        // The strip is something added to the card, not a precondition for it:
+        // the hero number and today's high and low do not come from it. A
+        // response asked for before the strip existed is still a reading.
+        val weather = map(
+            """
+            {"utc_offset_seconds": 28800, "timezone": "Asia/Taipei",
+             "current": {"interval": 900, "time": "2026-09-01T02:30", "temperature_2m": 25.6, "weather_code": 3},
+             "daily": {"temperature_2m_max": [31.8], "temperature_2m_min": [25.4]}}
+            """.trimIndent(),
+        )
+
+        assertEquals(32, weather.high)
+        assertEquals(emptyList<ForecastDay>(), weather.days)
     }
 
     private fun skyFor(code: Int) = map(

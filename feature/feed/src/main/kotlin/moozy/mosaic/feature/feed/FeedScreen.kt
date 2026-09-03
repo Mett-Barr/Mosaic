@@ -39,6 +39,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -50,10 +51,21 @@ import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.ArticleEnd
+import moozy.mosaic.core.ui.CardShape
+import moozy.mosaic.core.ui.PictureSeat
+import moozy.mosaic.core.ui.sharedArticleAttribution
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleImage
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
+import moozy.mosaic.domain.model.MovieId
+import moozy.mosaic.domain.model.Sky
 
 /**
  * The feed, holding on to a view model.
@@ -66,16 +78,20 @@ import moozy.mosaic.domain.model.FeedFailure
 fun FeedScreen(
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
     viewModel: FeedViewModel = hiltViewModel(),
 ) {
     val stories = viewModel.stories.collectAsLazyPagingItems()
     val weather by viewModel.weather.collectAsStateWithLifecycle()
+    val movies by viewModel.movies.collectAsStateWithLifecycle()
     FeedScreen(
         stories = stories,
         weather = weather,
+        movies = movies,
         onRefresh = viewModel::refresh,
         onOpenArticle = onOpenArticle,
         modifier = modifier,
+        bottomInset = bottomInset,
     )
 }
 
@@ -87,15 +103,26 @@ fun FeedScreen(
  * The phase is worked out by [feedPhase] rather than held anywhere. Nothing in
  * this file decides which screen this is -- that decision has tests, and a
  * decision made inside a composable would not.
+ *
+ * [bottomInset] is how much of the bottom edge something above this screen covers.
+ * This screen reaches the display's edge and is told the number rather than being
+ * measured smaller, because a list that stops short of the bar cannot scroll
+ * behind it -- and the four things drawn here spend it two different ways. The
+ * list spends it on `contentPadding`, so the clearance travels with the last card
+ * instead of standing there as a margin; the three states that only centre one
+ * thing spend it as padding, because nothing in them scrolls and there is nothing
+ * to keep reachable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
     stories: LazyPagingItems<ArticleRow>,
     weather: WeatherHeadline?,
+    movies: ImmutableList<MoviePoster>,
     onRefresh: () -> Unit,
     onOpenArticle: (ArticleId) -> Unit,
     modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
 ) {
     // The gesture belongs to the whole screen, not only the list: a reader who
     // pulls an "you are offline" screen down is asking the same question.
@@ -111,29 +138,40 @@ fun FeedScreen(
         // a `when` down here where nothing in this project could check it. Each
         // branch names what it draws, so the phase and the picture read alike.
         when (val phase = feedPhase(stories.loadState, stories.itemCount)) {
-            FeedPhase.Loading -> LoadingState()
+            FeedPhase.Loading -> LoadingState(bottomInset = bottomInset)
 
-            FeedPhase.Empty -> EmptyState()
+            FeedPhase.Empty -> EmptyState(bottomInset = bottomInset)
 
-            is FeedPhase.Failed -> FailedState(phase = phase, onRetry = stories::retry)
+            is FeedPhase.Failed -> FailedState(
+                phase = phase,
+                onRetry = stories::retry,
+                bottomInset = bottomInset,
+            )
 
-            FeedPhase.Ready -> ArticleList(stories, weather, onOpenArticle)
+            FeedPhase.Ready ->
+                ArticleList(stories, weather, movies, onOpenArticle, bottomInset = bottomInset)
         }
     }
 }
 
 /** Nothing to show yet, and a reason to wait. */
 @Composable
-private fun LoadingState(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+private fun LoadingState(bottomInset: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         CircularProgressIndicator()
     }
 }
 
 /** The feed answered and there was genuinely nothing in it. */
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+private fun EmptyState(bottomInset: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             "No articles yet.",
             style = MaterialTheme.typography.bodyLarge,
@@ -153,9 +191,13 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun FailedState(
     phase: FeedPhase.Failed,
     onRetry: () -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.fillMaxSize().padding(bottom = bottomInset).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Notice(
             icon = if (phase.offline) Icons.Filled.CloudOff else Icons.Outlined.ErrorOutline,
             message = phase.message,
@@ -169,7 +211,9 @@ private fun FailedState(
 private fun ArticleList(
     stories: LazyPagingItems<ArticleRow>,
     weather: WeatherHeadline?,
+    movies: ImmutableList<MoviePoster>,
     onOpenArticle: (ArticleId) -> Unit,
+    bottomInset: Dp,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -181,11 +225,28 @@ private fun ArticleList(
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        // The bar's height is added to the bottom rather than padded around the
+        // list, so the last card scrolls out from under the bar instead of
+        // stopping at a border the reader cannot see past.
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            top = 12.dp,
+            end = 16.dp,
+            bottom = 12.dp + bottomInset,
+        ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         weather?.let { reading ->
             item(key = "weather") { WeatherCard(reading) }
+        }
+
+        // The guard is here rather than inside the strip, the same way the
+        // weather card's is: an item that draws nothing still takes the column's
+        // 14dp of spacing with it, and a feed holding a gap open for something
+        // absent reads as broken rather than as short. A build with no TMDB token
+        // arrives here as an empty list and this is where it disappears.
+        if (movies.isNotEmpty()) {
+            item(key = "movies") { MovieStrip(movies) }
         }
 
         if (stories.itemCount > 0) {
@@ -242,13 +303,28 @@ private fun ArticleList(
     }
 }
 
-/** The story at the top of the feed: picture first, then the words. */
+/**
+ * The story at the top of the feed: picture first, then the words.
+ *
+ * The card is what the article screen grows out of, and the picture, the title
+ * and the line above it travel there rather than fading out here and back in
+ * there. What that costs this file is four modifiers; who is animating them, and
+ * whether anyone is, is not something this module is told.
+ */
 @Composable
 private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        // The bounds first and the width after it. The article screen sizes itself
+        // after its own bounds as well, and matching items have to agree about
+        // that: what comes before the shared modifier decides the rectangle that
+        // travels, what comes after it measures the contents that sit inside.
+        // The shared modifier is told which end this is, and rounds the card
+        // itself. While the transition runs this rectangle is lifted into an
+        // overlay and leaves the Surface behind, so corners declared only there
+        // round nothing for the length of the flight.
+        modifier = modifier.sharedArticleCard(article.id, ArticleEnd.IN_A_LIST).fillMaxWidth(),
+        shape = CardShape,
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column {
@@ -257,20 +333,31 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
                     model = url,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(LEAD_IMAGE_RATIO),
+                    // No corners asked for here. The picture is the top of the
+                    // card and the words carry on below it, so the two corners it
+                    // needs are the card's own top two -- which is what the card
+                    // cuts it to, standing still and in the air alike.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(LEAD_IMAGE_RATIO)
+                        .sharedArticleImage(article.id, PictureSeat.MEETING_AN_EDGE),
                 )
             }
             Column(
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Attribution(article.attribution)
+                Attribution(
+                    attribution = article.attribution,
+                    modifier = Modifier.sharedArticleAttribution(article.id),
+                )
                 Text(
                     text = article.title,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedArticleTitle(article.id),
                 )
                 if (article.summary.isNotBlank()) {
                     Text(
@@ -294,9 +381,11 @@ private fun LeadStory(article: ArticleRow, onOpen: () -> Unit, modifier: Modifie
 @Composable
 private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     Row(
+        // The bounds first, then the width. The clip is gone from here: it is the
+        // shared modifier's now, because the corners have to survive the overlay.
         modifier = modifier
+            .sharedArticleCard(article.id, ArticleEnd.IN_A_LIST)
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onOpen)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -306,11 +395,19 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(THUMBNAIL).clip(MaterialTheme.shapes.medium),
+                // The same rule as the lead story's picture, and here it comes out
+                // the other way: this thumbnail meets no edge of the row at all,
+                // so the row's corners never reach it and it rounds itself.
+                modifier = Modifier
+                    .size(THUMBNAIL)
+                    .sharedArticleImage(article.id, PictureSeat.STANDING_ALONE),
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Attribution(article.attribution)
+            Attribution(
+                attribution = article.attribution,
+                modifier = Modifier.sharedArticleAttribution(article.id),
+            )
             Text(
                 text = article.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -319,12 +416,20 @@ private fun StoryRow(article: ArticleRow, onOpen: () -> Unit, modifier: Modifier
                 // keeps the rhythm the design gets from every row being alike.
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.sharedArticleTitle(article.id),
             )
         }
     }
 }
 
-/** Where a story came from and when, in the one line the row model carries. */
+/**
+ * Where a story came from and when, in the one line the row model carries.
+ *
+ * The [modifier] is not decoration here: it is how the caller hands this line the
+ * bounds it travels in. The line is the same words on the card and on the article,
+ * so leaving it to cross-fade while the picture and the title flew was the one
+ * part of the card that stayed behind.
+ */
 @Composable
 private fun Attribution(attribution: String, modifier: Modifier = Modifier) {
     Text(
@@ -424,6 +529,35 @@ private val PreviewWeather = WeatherHeadline(
     place = "Taipei",
     temperature = "28°",
     conditions = "Cloudy · 31° / 24°",
+    sky = Sky.CLOUDY,
+    // The card's own previews live beside it; this one is here so the list
+    // preview shows the weather cell at the height it actually has.
+    days = persistentListOf(
+        DayHeadline(day = "Tue", temperature = "32°", sky = Sky.CLOUDY),
+        DayHeadline(day = "Wed", temperature = "29°", sky = Sky.RAIN),
+        DayHeadline(day = "Thu", temperature = "33°", sky = Sky.CLEAR),
+    ),
+)
+
+/**
+ * Two films, so the list preview shows the strip at the height it actually has.
+ *
+ * The strip's own previews live beside it, and so does the reasoning about why
+ * these carry no poster URLs.
+ */
+private val PreviewFilms = persistentListOf(
+    MoviePoster(
+        id = MovieId(1087192),
+        title = "How to Train Your Dragon",
+        rating = "8.1",
+        posterUrl = null,
+    ),
+    MoviePoster(
+        id = MovieId(1233413),
+        title = "A Title Long Enough That It Has To Stop Somewhere",
+        rating = "7.9",
+        posterUrl = null,
+    ),
 )
 
 /**
@@ -483,12 +617,18 @@ private class FeedFailures : PreviewParameterProvider<FeedPhase.Failed> {
     }
 }
 
+/**
+ * Nothing covers the bottom of a preview: there is no bar above it, so the
+ * clearance the real screen is handed is zero here rather than a guess at it.
+ */
+private val NoBar = 0.dp
+
 /** One arc in the primary colour. There is nothing here a second theme would show. */
 @Preview
 @Composable
 private fun LoadingStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { LoadingState() }
+        Surface(color = MaterialTheme.colorScheme.background) { LoadingState(NoBar) }
     }
 }
 
@@ -500,7 +640,7 @@ private fun LoadingStatePreview() {
 @Composable
 private fun EmptyStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { EmptyState() }
+        Surface(color = MaterialTheme.colorScheme.background) { EmptyState(NoBar) }
     }
 }
 
@@ -512,17 +652,19 @@ private fun FailedStatePreview(
 ) {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            FailedState(phase = phase, onRetry = {})
+            FailedState(phase = phase, onRetry = {}, bottomInset = NoBar)
         }
     }
 }
 
 /**
- * The list in both themes, weather card included.
+ * The list in both themes, all three sources included.
  *
  * The one preview in this file worth two renders, because this is where the
- * palette is: the card's green gradient, the raised story surfaces, and body text
- * on a page that is not white in either scheme.
+ * palette is: the card's green gradient, the raised story surfaces, the posters'
+ * grey tiles, and body text on a page that is not white in either scheme. It is
+ * also the only render that shows the three shapes stacked -- a wide gradient,
+ * a row that moves sideways, and a column of stories.
  */
 @PreviewLightDark
 @Composable
@@ -536,7 +678,38 @@ private fun ArticleListPreviews() {
             ArticleList(
                 stories = stories.collectAsLazyPagingItems(),
                 weather = PreviewWeather,
+                movies = PreviewFilms,
                 onOpenArticle = {},
+                bottomInset = NoBar,
+            )
+        }
+    }
+}
+
+/**
+ * The same feed with no films in it.
+ *
+ * This is the strip's empty case, and it is a preview of the list rather than of
+ * the strip because that is where the emptiness is decided: [MovieStrip] is never
+ * called with nothing, the item is simply not emitted. What has to be checked by
+ * eye is that the weather card and "Top Stories" close up against each other with
+ * no extra gap where the posters were.
+ *
+ * It is also what a clean checkout looks like. Without a TMDB token the app is
+ * this, and this has to look deliberate rather than like something failed to load.
+ */
+@Preview
+@Composable
+private fun ArticleListWithoutFilmsPreview() {
+    val stories = remember { MutableStateFlow(PreviewPaging) }
+    MosaicTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ArticleList(
+                stories = stories.collectAsLazyPagingItems(),
+                weather = PreviewWeather,
+                movies = persistentListOf(),
+                onOpenArticle = {},
+                bottomInset = NoBar,
             )
         }
     }

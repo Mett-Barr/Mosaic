@@ -1,16 +1,26 @@
 package moozy.mosaic.feature.detail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -18,16 +28,21 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
@@ -39,8 +54,18 @@ import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.ColorImage
+import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePreviewHandler
+import coil3.compose.LocalAsyncImagePreviewHandler
+import moozy.mosaic.core.ui.ArticleEnd
 import moozy.mosaic.core.ui.MosaicTheme
+import moozy.mosaic.core.ui.PictureSeat
+import moozy.mosaic.core.ui.sharedArticleAttribution
+import moozy.mosaic.core.ui.sharedArticleCard
+import moozy.mosaic.core.ui.sharedArticleImage
+import moozy.mosaic.core.ui.sharedArticleTitle
 import moozy.mosaic.domain.model.ArticleId
 import moozy.mosaic.domain.model.FeedFailure
 
@@ -61,6 +86,7 @@ fun DetailScreen(
     LaunchedEffect(id) { viewModel.open(id) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     DetailScreen(
+        id = id,
         state = state,
         onRetry = viewModel::retry,
         onBack = onBack,
@@ -70,8 +96,21 @@ fun DetailScreen(
     )
 }
 
+/**
+ * [id] is not shown. It is what the card the reader tapped is matched against, and
+ * it has to be here rather than on [ArticleView] because this screen has to claim
+ * those bounds before it knows what is in them -- the article is still being
+ * fetched when the transition starts.
+ *
+ * Nothing is above this screen and no inset has been subtracted from it: it is
+ * handed every edge and no frame at all (DECISIONS.md 34). So the way back is
+ * drawn here, over whichever of the three states is underneath -- and here rather
+ * than a level up because whether the arrow needs protecting from a photograph is
+ * a question only this screen can answer.
+ */
 @Composable
 fun DetailScreen(
+    id: ArticleId,
     state: DetailUiState,
     onRetry: () -> Unit,
     onBack: () -> Unit,
@@ -79,21 +118,131 @@ fun DetailScreen(
     onLetGo: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // One branch per state, each naming what it draws: [DetailUiState] is sealed,
-    // so a state added later without a picture to go with it will not build.
-    when (state) {
-        DetailUiState.Loading -> LoadingState(modifier)
+    // The bounds the tapped card grows into, on the screen rather than inside any
+    // one of its three states: a reader who opens an article over a slow
+    // connection watches the card become a spinner and then an article, which is
+    // one movement, not two.
+    val container = modifier.sharedArticleCard(id, ArticleEnd.FILLING_THE_DISPLAY)
+    // Two of the three states have nothing at all under the status bar, and the
+    // third only has a photograph when the article came with one -- `imageUrl` is
+    // nullable, and plenty of them arrive without it.
+    val overPicture = state is DetailUiState.Content && state.article.imageUrl != null
+    // The opaque layer is the container's own, and it used to be a full-screen
+    // frame outside it. Outside, it did not travel: the rectangle shrank back
+    // towards the card with a screenful of this colour still standing behind it,
+    // so the article never appeared to leave -- it left a page-sized hole where
+    // it had been. Inside, the layer that hides the list is the layer that moves,
+    // and at this end of the flight it is the whole display anyway, which is what
+    // makes the move free (DECISIONS.md 38).
+    Surface(
+        modifier = container.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            // One branch per state, each naming what it draws: [DetailUiState] is
+            // sealed, so a state added later without a picture to go with it will
+            // not build.
+            when (state) {
+                DetailUiState.Loading -> LoadingState()
 
-        is DetailUiState.Failed -> FailedState(state, onRetry, onBack, modifier)
+                is DetailUiState.Failed -> FailedState(state, onRetry, onBack)
 
-        is DetailUiState.Content -> Article(state, onBack, onKeep, onLetGo, modifier)
+                is DetailUiState.Content -> Article(id, state, onBack, onKeep, onLetGo)
+            }
+            WayBack(onBack = onBack, overPicture = overPicture)
+        }
+    }
+}
+
+/**
+ * The way out, floating over whatever the state below it drew.
+ *
+ * A photograph makes no promise about its own brightness, so there is no arrow
+ * colour that is legible over every article. That is why the documented answer to
+ * system bars over an image is a scrim and not a choice of icon colour, and the
+ * arrow needs one for the same reason the icons above it do.
+ *
+ * **One gradient rather than two.** The status bar's icons and this arrow sit in
+ * the same column of pixels, one directly under the other; two scrims stacked
+ * there would add their alphas in the overlap and leave a visible step where the
+ * shorter one ended. So there is a single gradient, starting above the status bar
+ * and reaching transparent below the arrow.
+ *
+ * It is drawn from `colorScheme.scrim` and not `surfaceContainer`. Material shapes
+ * this gradient out of a surface colour, but that is for protecting icons from a
+ * *known* background; over a photograph the light scheme's surface would lay a
+ * white veil on the picture and leave white icons exactly as illegible as they
+ * were. `scrim` is the one slot that is black in both schemes, which is what a
+ * photograph needs from either of them.
+ *
+ * [overPicture] is false in the two states that have no picture and in an article
+ * that arrived without one. There the colour behind the arrow is the app's own and
+ * known, a dark veil over it would be protecting the arrow from nothing, and it
+ * gets `onSurface` and no scrim -- which is exactly what the bar that used to be
+ * here gave it.
+ *
+ * **The scrim and the arrow arrive together, and neither is given an enter here.**
+ * Two fades already cover this whole screen and everything in it: the article
+ * entry's own `fadeIn` (`CardBecomesArticle` in `:navigation`) and, while the card
+ * and the article are matched, the `enter` that `sharedArticleCard`'s `sharedBounds`
+ * applies to its subtree. A third fade laid on this Box would multiply with both
+ * rather than replace them (DECISIONS.md 37).
+ */
+@Composable
+private fun WayBack(
+    onBack: () -> Unit,
+    overPicture: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.fillMaxWidth()) {
+        if (overPicture) {
+            val scrim = MaterialTheme.colorScheme.scrim
+            Spacer(
+                // Nothing clickable in it, so the article still scrolls under the
+                // reader's finger everywhere the arrow itself is not.
+                Modifier
+                    .fillMaxWidth()
+                    .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + Reach)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                scrim.copy(alpha = 0.55f),
+                                scrim.copy(alpha = 0.35f),
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+        }
+        IconButton(
+            onClick = onBack,
+            // The inset and not a number. A cutout, a tall status bar and a phone
+            // with neither are three different distances, and only one of them is
+            // the distance on the machine this was written on.
+            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back to the feed",
+                // White because what is behind it is black, and the black is the
+                // scrim rather than the theme. Neither end of that pair is the
+                // colour scheme's to choose while a photograph is underneath.
+                tint = if (overPicture) Color.White else MaterialTheme.colorScheme.onSurface,
+            )
+        }
     }
 }
 
 /** The article has been asked for and has not arrived. */
 @Composable
 private fun LoadingState(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    // The system bars are stepped around rather than drawn under: there is no
+    // picture here worth the edge, and there is no longer a bar above subtracting
+    // them on this screen's behalf.
+    Box(
+        modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         CircularProgressIndicator()
     }
 }
@@ -112,7 +261,10 @@ private fun FailedState(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    Box(
+        modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
@@ -153,6 +305,7 @@ private fun FailedState(
 
 @Composable
 private fun Article(
+    id: ArticleId,
     state: DetailUiState.Content,
     onBack: () -> Unit,
     onKeep: () -> Unit,
@@ -160,69 +313,100 @@ private fun Article(
     modifier: Modifier = Modifier,
 ) {
     val article = state.article
+    val picture = article.imageUrl
     val uriHandler = LocalUriHandler.current
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        article.imageUrl?.let { url ->
+    // Nothing is padded out here. Everything this screen owes the system bars is
+    // owed by the words below the picture, and it is paid inside the scroll: the
+    // picture can then start at the very top, and the clearance at the bottom
+    // scrolls away with the last button instead of standing there as a margin.
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        if (picture != null) {
             AsyncImage(
-                model = url,
+                model = picture,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // Flush to the top and to both sides, with no corners at all --
+                // there is nothing left behind a rounded corner for it to be cut
+                // out of. The picture does not say so itself: the screen's own
+                // bounds are square at this end, and the picture is cut by them.
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(IMAGE_RATIO)
-                    .clip(MaterialTheme.shapes.large),
+                    .sharedArticleImage(id, PictureSeat.MEETING_AN_EDGE),
+            )
+        } else {
+            // No picture, and the arrow floating above is there all the same. This
+            // is the room it needs, handed back to the article the moment the
+            // reader scrolls.
+            Spacer(
+                Modifier.height(
+                    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + Reach,
+                ),
             )
         }
-        Text(
-            article.attribution,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            article.title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        if (article.summary.isNotBlank()) {
-            Text(
-                article.summary,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        // The API carries a summary, not the article. Reading the whole thing
-        // means leaving, and saying so is better than a truncated page that
-        // looks like the article and is not.
-        Button(onClick = { uriHandler.openUri(article.url) }, modifier = Modifier.fillMaxWidth()) {
-            Text(article.readFullLabel)
-        }
-        // Kept articles stay readable with no network, which is the whole
-        // reason the button is here rather than a bookmark somewhere else.
-        // Filled mark for kept, outlined for not: the same pair the Saved
-        // screen and the bar at the bottom use.
-        FilledTonalButton(
-            onClick = if (state.saved) onLetGo else onKeep,
-            modifier = Modifier.fillMaxWidth(),
+        Column(
+            modifier = Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp)
+                .padding(top = 14.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(
-                imageVector = if (state.saved) {
-                    Icons.Filled.Bookmark
-                } else {
-                    Icons.Outlined.BookmarkBorder
-                },
-                contentDescription = null,
-                modifier = Modifier.padding(end = 8.dp),
+            Text(
+                article.attribution,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.sharedArticleAttribution(id),
             )
-            Text(if (state.saved) "Saved for offline — tap to remove" else "Save to read offline")
-        }
-        TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("Back to the feed")
+            Text(
+                article.title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.sharedArticleTitle(id),
+            )
+            if (article.summary.isNotBlank()) {
+                Text(
+                    article.summary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // The API carries a summary, not the article. Reading the whole thing
+            // means leaving, and saying so is better than a truncated page that
+            // looks like the article and is not.
+            Button(
+                onClick = { uriHandler.openUri(article.url) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(article.readFullLabel)
+            }
+            // Kept articles stay readable with no network, which is the whole
+            // reason the button is here rather than a bookmark somewhere else.
+            // Filled mark for kept, outlined for not: the same pair the Saved
+            // screen and the bar at the bottom use.
+            FilledTonalButton(
+                onClick = if (state.saved) onLetGo else onKeep,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = if (state.saved) {
+                        Icons.Filled.Bookmark
+                    } else {
+                        Icons.Outlined.BookmarkBorder
+                    },
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text(
+                    if (state.saved) {
+                        "Saved for offline — tap to remove"
+                    } else {
+                        "Save to read offline"
+                    },
+                )
+            }
+            TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+                Text("Back to the feed")
+            }
         }
     }
 }
@@ -230,11 +414,24 @@ private fun Article(
 private const val IMAGE_RATIO = 16f / 9f
 
 /**
- * The article the previews below are drawn from.
+ * How far past the status bar the arrow's business reaches.
  *
- * No image URL, for the reason the feed's fixtures carry none: Coil has nowhere
- * to fetch from in a still render and this screen sets no placeholder, so a URL
- * would reserve a 16:9 hole and leave it empty.
+ * Its 48dp touch target, and enough again for the gradient to arrive at
+ * transparent *below* the arrow rather than level with it -- a fade that runs out
+ * at the glyph leaves the lower half of the arrow with nothing behind it. The same
+ * distance is what an article without a picture keeps clear at the top, so that
+ * the arrow lands in the same place whether or not there is one.
+ */
+private val Reach = 80.dp
+
+private val PreviewArticleId = ArticleId("preview-observatory")
+
+/**
+ * The article the previews below are drawn from, and it has no picture.
+ *
+ * That is a case rather than an omission: `ArticleView.imageUrl` is nullable, and
+ * an article arriving without one still has to leave the arrow somewhere legible.
+ * [PreviewArticleWithPicture] is the other half of the pair.
  */
 private val PreviewArticle = ArticleView(
     title = "The observatory that keeps working because nobody funded its replacement",
@@ -246,6 +443,29 @@ private val PreviewArticle = ArticleView(
     url = "https://example.org/observatory",
     readFullLabel = "Read the full article at Nature",
 )
+
+/** The same article with something under the status bar. Only [WithAPicture] can draw it. */
+private val PreviewArticleWithPicture = PreviewArticle.copy(
+    imageUrl = "https://example.org/observatory.jpg",
+)
+
+/**
+ * A stand-in photograph, so that a still render can show what floats on top of one.
+ *
+ * Coil has nowhere to fetch from in a preview, and until now these fixtures
+ * carried no URL for exactly that reason -- a URL reserved a 16:9 hole and left it
+ * empty. An empty hole is the one thing that cannot be looked at here: the scrim
+ * and the arrow exist because of the picture, and over nothing they say nothing.
+ * A flat colour is enough. What is being judged is the gradient's alpha, not the
+ * photograph.
+ */
+@OptIn(ExperimentalCoilApi::class)
+@Composable
+private fun WithAPicture(content: @Composable () -> Unit) {
+    val standIn = Color(0xFF6B7A88).toArgb()
+    val handler = remember(standIn) { AsyncImagePreviewHandler { ColorImage(standIn) } }
+    CompositionLocalProvider(LocalAsyncImagePreviewHandler provides handler, content = content)
+}
 
 /**
  * A failure with the words the app would actually give it.
@@ -276,12 +496,28 @@ private class DetailFailures : PreviewParameterProvider<DetailUiState.Failed> {
     override fun getDisplayName(index: Int) = states[index].first
 }
 
-/** One arc in the primary colour. There is nothing here a second theme would show. */
+/**
+ * One arc in the primary colour, and the arrow that has to be reachable beside it.
+ *
+ * Every preview below draws the whole screen rather than a state on its own. The
+ * arrow belongs to [DetailScreen] and not to any one state, and it is precisely
+ * the part that changed -- a preview of a state alone would be a preview of the
+ * half that did not.
+ */
 @Preview
 @Composable
 private fun LoadingStatePreview() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) { LoadingState() }
+        Surface(color = MaterialTheme.colorScheme.background) {
+            DetailScreen(
+                id = PreviewArticleId,
+                state = DetailUiState.Loading,
+                onRetry = {},
+                onBack = {},
+                onKeep = {},
+                onLetGo = {},
+            )
+        }
     }
 }
 
@@ -293,25 +529,36 @@ private fun FailedStatePreview(
 ) {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            FailedState(state = state, onRetry = {}, onBack = {})
+            DetailScreen(
+                id = PreviewArticleId,
+                state = state,
+                onRetry = {},
+                onBack = {},
+                onKeep = {},
+                onLetGo = {},
+            )
         }
     }
 }
 
 /**
- * The article as a reader first meets it: not kept.
+ * The article as a reader first meets it: not kept, and with no picture.
  *
  * One theme, because [ArticlePreviews] takes the same screen through both. What
- * this one is for is the pair only this state shows -- "Save to read offline"
- * and the outlined mark beside it.
+ * this one is for is the pair only this state shows -- "Save to read offline" and
+ * the outlined mark beside it -- and, above them, the case the immersive layout
+ * has to survive anyway: no photograph, so the arrow stands on the page's own
+ * colour with no scrim, and the words begin below it rather than under it.
  */
 @Preview
 @Composable
 private fun ArticlePreview() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            Article(
+            DetailScreen(
+                id = PreviewArticleId,
                 state = DetailUiState.Content(PreviewArticle),
+                onRetry = {},
                 onBack = {},
                 onKeep = {},
                 onLetGo = {},
@@ -321,23 +568,30 @@ private fun ArticlePreview() {
 }
 
 /**
- * The article kept, in both themes.
+ * The article kept, with its picture, in both themes.
  *
- * Kept rather than not because that is the state with the colour in it: a filled
- * tonal button and a filled bookmark, which are the two slots the dark scheme
- * moves furthest from the light one.
+ * Both themes because this is where the scrim has to hold. It is one dark gradient
+ * in either scheme, which is the opposite of what every other colour on this
+ * screen does, and the light render is the one that would give it away if a
+ * surface colour had been used instead. Kept rather than not for the reason it was
+ * always kept here: a filled tonal button and a filled bookmark are the two slots
+ * the dark scheme moves furthest from the light one.
  */
 @PreviewLightDark
 @Composable
 private fun ArticlePreviews() {
     MosaicTheme {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            Article(
-                state = DetailUiState.Content(PreviewArticle, saved = true),
-                onBack = {},
-                onKeep = {},
-                onLetGo = {},
-            )
+        WithAPicture {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                DetailScreen(
+                    id = PreviewArticleId,
+                    state = DetailUiState.Content(PreviewArticleWithPicture, saved = true),
+                    onRetry = {},
+                    onBack = {},
+                    onKeep = {},
+                    onLetGo = {},
+                )
+            }
         }
     }
 }
@@ -355,8 +609,10 @@ private fun ArticlePreviews() {
 private fun ArticleFontScalePreviews() {
     MosaicTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            Article(
+            DetailScreen(
+                id = PreviewArticleId,
                 state = DetailUiState.Content(PreviewArticle, saved = true),
+                onRetry = {},
                 onBack = {},
                 onKeep = {},
                 onLetGo = {},

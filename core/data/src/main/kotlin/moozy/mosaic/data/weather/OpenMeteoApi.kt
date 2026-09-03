@@ -48,9 +48,14 @@ internal fun openMeteoClient(engine: HttpClientEngine): HttpClient = HttpClient(
  * failure means to the app is not a decision that can be made from here: the
  * feed turns one into a screen, and the weather turns one into no card at all.
  *
- * `forecast_days` is 1 because the card shows today. The daily block is asked
- * for anyway: the high and low are today's, and the current temperature on its
- * own does not say whether 29 degrees is the top of the day or the bottom.
+ * `forecast_days` is 3 because the card shows three: today's number, and a strip
+ * of days under it. Three and not seven -- the strip is there to say which way
+ * the week is going, and a row of seven columns on a phone is a table nobody
+ * asked for.
+ *
+ * The daily block carries its own `weather_code` as well as the temperatures.
+ * Without it every day in the strip would have to borrow today's sky, which is
+ * exactly the thing a forecast is for saying is about to change.
  */
 internal class OpenMeteoApi(
     private val client: HttpClient,
@@ -62,15 +67,18 @@ internal class OpenMeteoApi(
             parameter("latitude", place.latitude)
             parameter("longitude", place.longitude)
             parameter("current", "temperature_2m,weather_code")
-            parameter("daily", "temperature_2m_max,temperature_2m_min")
+            parameter("daily", "weather_code,temperature_2m_max,temperature_2m_min")
             parameter("timezone", "auto")
-            parameter("forecast_days", 1)
+            parameter("forecast_days", FORECAST_DAYS)
         }.body()
         return forecast.toWeather(place.name)
     }
 
     private companion object {
         const val FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+
+        /** Today and the two after it, which is as many as the strip has room for. */
+        const val FORECAST_DAYS = 3
     }
 }
 

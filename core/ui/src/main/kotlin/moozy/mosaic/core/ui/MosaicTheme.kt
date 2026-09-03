@@ -22,9 +22,9 @@ import androidx.compose.ui.unit.sp
  * gaining an edge to this one -- Compose carries the theme down, Gradle does not.
  *
  * Every colour the design uses is a slot of the Material scheme rather than a new
- * channel of its own, for that reason. `:feature:saved` is allowed to depend on
- * `:core:domain` and nothing else; a palette shipped as a CompositionLocal here
- * would have been a palette that screen could not read.
+ * channel of its own, for that reason. `:feature:saved` had no edge to this module
+ * at all until shared elements gave it one; a palette shipped as a CompositionLocal
+ * here would have been a palette that screen could not read.
  *
  * Deliberately not dynamic colour. A feed of photographs from other people's
  * websites already brings its own palette; letting the wallpaper decide the rest

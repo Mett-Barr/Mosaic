@@ -25,10 +25,17 @@ import moozy.mosaic.domain.repository.ArticleRepository
  * Where an article comes from, decided in one place.
  *
  * The two questions have different numbers of sources, and the name says which
- * way the split falls. [article] has two: the copy the reader kept answers
- * first, and the network is asked only when there is no such copy. [articles]
- * has one and is not getting a second -- the feed is deliberately not
- * offline-first (DECISIONS 25, 28), so a page is always the network's answer.
+ * way the split falls. [article] has three: the copy the reader kept answers
+ * first, then the copy the feed is already showing, and the network is asked only
+ * when there is neither. [articles] has one and is not getting a second -- the
+ * feed is deliberately not offline-first (DECISIONS 25, 28), so a page is always
+ * the network's answer.
+ *
+ * The third source is filled by the second question rather than by a caller: a
+ * page handed to the feed is a screenful of articles this app now has, and the
+ * screen that opens one of them should not have to ask for it back
+ * (DECISIONS 41). Nothing outside this module knows that happens, which is the
+ * point -- `ArticlePagingSource` asks for a page and gets one, exactly as before.
  *
  * Not `OfflineFirstArticleRepository`, which is Now in Android's name for this
  * role: that name would claim something only half of this class does. Saved-first
@@ -48,16 +55,24 @@ import moozy.mosaic.domain.repository.ArticleRepository
 internal class SavedFirstArticleRepository(
     private val api: SpaceflightNewsApi,
     private val kept: SavedArticleDao,
+    private val showed: ArticlesTheFeedShowed = ArticlesTheFeedShowed(),
     private val pageSize: Int = DEFAULT_PAGE_SIZE,
 ) : ArticleRepository {
 
     override suspend fun articles(after: PageCursor?): ArticlesResult =
         when (val answer = asked { api.articles(limit = pageSize, after = after?.value) }) {
-            is Answer.Yes -> ArticlesResult.Loaded(
-                articles = answer.value.articles,
-                next = answer.value.next?.let(::PageCursor),
-                dropped = answer.value.droppedReasons.size,
-            )
+            is Answer.Yes -> {
+                // A null cursor is the top of the list, which is the reader or the
+                // app asking for the feed again. That is the one event this app
+                // treats as "the list starts over" (DECISIONS 25), so it is the
+                // one event that empties what the last list left behind.
+                showed.handedOut(answer.value.articles, fromTheTop = after == null)
+                ArticlesResult.Loaded(
+                    articles = answer.value.articles,
+                    next = answer.value.next?.let(::PageCursor),
+                    dropped = answer.value.droppedReasons.size,
+                )
+            }
 
             is Answer.No -> ArticlesResult.Failed(answer.reason)
         }
@@ -70,9 +85,19 @@ internal class SavedFirstArticleRepository(
      * said they wanted available without either. What it costs is that a kept
      * article stops following edits made at the source; DECISIONS 30 is the
      * record of that trade.
+     *
+     * The copy the feed is showing comes after it and not before. What a reader
+     * kept is the article (DECISIONS 30) and a page that happens to be carrying
+     * the same id does not get to overrule that -- otherwise which copy they saw
+     * would depend on whether the feed had scrolled past it, which is not a rule
+     * anybody could hold in their head. What it does replace is the request:
+     * an article the reader is already looking at a card of is in hand, and the
+     * only thing asking again buys is a spinner in front of it (DECISIONS 41).
      */
     override suspend fun article(id: ArticleId): ArticleResult =
-        keptCopyOf(id)?.let(ArticleResult::Loaded) ?: fromTheNetwork(id)
+        keptCopyOf(id)?.let(ArticleResult::Loaded)
+            ?: showed.find(id)?.let(ArticleResult::Loaded)
+            ?: fromTheNetwork(id)
 
     /**
      * The copy the reader kept, if there is one this app can still read.

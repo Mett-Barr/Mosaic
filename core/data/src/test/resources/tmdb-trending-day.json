@@ -1,0 +1,72 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "adult": false,
+      "backdrop_path": "/8eifdha9GQeZAkexgtD45546XKx.jpg",
+      "id": 1087192,
+      "title": "How to Train Your Dragon",
+      "original_language": "en",
+      "original_title": "How to Train Your Dragon",
+      "overview": "On the rugged isle of Berk, a young Viking befriends the dragon he was raised to kill.",
+      "poster_path": "/q5pXRYTycaeW6dEgsCrd4mYPmxM.jpg",
+      "media_type": "movie",
+      "genre_ids": [14, 12, 28],
+      "popularity": 812.4211,
+      "release_date": "2026-06-06",
+      "video": false,
+      "vote_average": 8.117,
+      "vote_count": 1243
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/1RgPyOhN4DRs225BGTlHJqCudII.jpg",
+      "id": 1234821,
+      "title": "A Film Nobody Photographed",
+      "original_language": "en",
+      "original_title": "A Film Nobody Photographed",
+      "overview": "The row is whole; it simply has no poster on file yet.",
+      "poster_path": null,
+      "media_type": "movie",
+      "genre_ids": [878, 53],
+      "popularity": 431.8,
+      "release_date": "2026-07-02",
+      "video": false,
+      "vote_average": 6.452,
+      "vote_count": 987
+    },
+    {
+      "adult": false,
+      "backdrop_path": null,
+      "id": 803796,
+      "title": "A Film Nobody Has Voted On",
+      "original_language": "ko",
+      "original_title": "A Film Nobody Has Voted On",
+      "overview": "Trending on the day it opened, which is before anybody has rated it.",
+      "poster_path": "/jvpkBenB6hv19WWYVlaiow8zklq.jpg",
+      "media_type": "movie",
+      "genre_ids": [16, 28],
+      "popularity": 298.03,
+      "release_date": "2026-09-02",
+      "video": false,
+      "vote_average": 0,
+      "vote_count": 0
+    },
+    {
+      "adult": false,
+      "backdrop_path": null,
+      "id": 999999,
+      "original_language": "en",
+      "overview": "A row with no title at all, which is not a film this app can show.",
+      "poster_path": "/notitle.jpg",
+      "media_type": "movie",
+      "genre_ids": [],
+      "popularity": 12.5,
+      "video": false,
+      "vote_average": 5.5,
+      "vote_count": 42
+    }
+  ],
+  "total_pages": 1000,
+  "total_results": 20000
+}

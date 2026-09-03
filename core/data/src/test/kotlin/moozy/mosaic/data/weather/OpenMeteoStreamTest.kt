@@ -78,8 +78,11 @@ class OpenMeteoStreamTest {
         assertEquals("25.033", url.parameters["latitude"])
         assertEquals("121.5654", url.parameters["longitude"])
         assertEquals("temperature_2m,weather_code", url.parameters["current"])
-        assertEquals("temperature_2m_max,temperature_2m_min", url.parameters["daily"])
-        assertEquals("1", url.parameters["forecast_days"])
+        assertEquals(
+            "weather_code,temperature_2m_max,temperature_2m_min",
+            url.parameters["daily"],
+        )
+        assertEquals("3", url.parameters["forecast_days"])
     }
 
     @Test
