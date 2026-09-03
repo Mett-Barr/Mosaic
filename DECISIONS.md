@@ -3048,3 +3048,259 @@ public class NavigationEvent { val progress: Float /* 0..1 */; val swipeEdge; va
   androidx 這幾包還在動（GitHub 上的 `androidx-main` 已經比 1.1.4 前面，
   `rememberNavigationEventState` 在那裡已經搬進 `androidx.navigation3.scene`），
   所以這一則的每一句都繫在這三個版本上。
+
+---
+
+## 64. app 真的發得出自己的導覽事件，但發得出來的進度是一條自己編的時間線
+
+> **這一則取代第 63 則「不採用」的結論，並更正它其中一條理由，但不改寫它。**
+> 63 則那兩條編號的理由——**只有手勢沒有程式化導覽**、**`Idle` 只代表手指放開**——
+> 這一輪一條都沒有翻掉，而且第二條在手勢那一程上又咬了一次。被翻掉的是它
+> 「順便問清楚的三件事」裡的第三件：**「能不能自己餵 `DirectNavigationEventInput`？
+> 不行」**。餵得出來，而且它給的第二個理由（灌 forward 會讓 `NavDisplay` 拿 forward
+> 的進度去 seek back 的轉場）在這個 app 走的那條 API 上到不了。
+> **結論相同，理由不同。** 63 則原文保留，history 是交付物。
+
+**做了什麼** —— 同一個行為（bar 留到文章蓋住它為止、回程不閃）建了兩個實作：
+
+- **(A) app 自己發導覽事件。** `:navigation` 多一個 `ArticleCoverage.kt`：一顆自己的
+  `NavigationEventDispatcher`、一個 `DirectNavigationEventInput`、一條 `Animatable<Float>`
+  逐幀餵 `forwardProgressed`／`backProgressed`，bar 讀 `dispatcher.transitionState`。
+- **(B) 沒有函式庫的那個。** `Mosaic.kt` 裡一個 `animateFloatAsState`，bar 的
+  `visible` 讀它。
+
+**兩個都沒有進 commit。** 下面是為什麼，以及走完之後知道了什麼。
+
+---
+
+### 先量了一件先前沒有量過的事：bar 是什麼時候才被蓋滿的
+
+第 58、62 兩則都講「bar 該被蓋住而不是被拿走」。62 則量過洋紅**部分**消失，
+但**沒有一則量過「整條被蓋滿」與「文章交還 overlay」這兩刻落在哪一幀**。
+這一輪先做了一個丟棄式的校準版：`visible = true`，bar 永遠在 tree 裡、永遠塗成洋紅。
+`animator_duration_scale=10`、`screenrecord`、`ffmpeg -vf fps=30`，逐幀數洋紅像素：
+
+| 幀 | 洋紅佔比 | 讀法 |
+|---|---|---|
+| f055–f125 | 0.667 | 沒有東西畫在那一條上 |
+| **f126** | 0.449 | 有東西開始從上緣蓋進來 |
+| f147 | 0.156 | |
+| f177 | 0.035 | |
+| **f213** | 0.000 | 整條沒有洋紅了 |
+| **f229** | 0.667 | 洋紅整條回來 |
+
+**這條曲線嚴格說只證明「取樣區域裡的洋紅像素變少又變回來」。**
+`visible = true` 排掉的是「bar 被條件拿掉」這一種解釋，排不掉 bar 自己被搬動、
+被裁切、被改 alpha，也排不掉別的東西（別的 overlay、系統 UI）蓋上來，
+還有 H.264 壓縮與色度次取樣對「算不算洋紅」的影響。
+**把它讀成「文章的矩形蓋上來又離開」是推論**，靠的是第 42 則已經定下的事實
+（overlay 畫在 `Scaffold` 之上）與同一批幀的目視比對，不是這條曲線自己說的。
+
+在那個推論之下，f229 是這張表最有用的一列：**從那一刻起 bar 不再受文章保護**。
+於是「拿掉 bar 完全看不出來」的視窗是 f213–f228，十六個擷取樣本；
+放寬到「只剩百分之五露在外面」也不過 f177–f228，五十一個。
+（把它換算成 scale=1 是一到五幀，但那是**除以十算出來的，沒有在 scale=1 下重量**。）
+**這一則所有的取捨都活在這個視窗裡**，而第 58／62 則都是在不知道它有多窄的情況下寫的。
+
+---
+
+### (A) 安不安全：分離做得到，但不是靠傳 parent 做的
+
+**`rememberNavigationEventDispatcherOwner()` 停在預設 parent 上不是隔離。**
+`navigationevent` 1.1.2 的 sources jar 裡，`NavigationEventDispatcher` 自己寫著
+
+```kotlin
+internal val sharedProcessor: NavigationEventProcessor =
+    parent?.sharedProcessor ?: NavigationEventProcessor()
+```
+
+而 `transitionState` 就是 `sharedProcessor.transitionState`。**帶 parent 的子 dispatcher
+跟父親共用同一顆 processor、同一份 transition state。** 那個 composable 的 parent 預設值是
+`checkNotNull(LocalNavigationEventDispatcherOwner.current)`，所以在這個 app 裡不明確傳 `null`
+就一定會共用。（`NavigationEventDispatcher()` 無參數建構子本來就是 root，
+所以「只有明確傳 null 才行」只對這個 composable 成立，不是整包 API 的性質。）
+
+**在共用的 processor 上餵事件會壞掉的地方，跟事前預期的不是同一個。**
+事前的擔心是「`NavDisplay` 不讀 `InProgress.direction`，餵 forward 會讓它 seek back 的轉場」。
+**在這個 app 走的那條 API 上這條到不了**：`NavDisplay` 讀的不是 dispatcher 的 `StateFlow`，
+是 `navigationEventState.transitionState`；那個欄位只由 compose 那層的
+`NavigationEventHandler` 回呼寫入，而 `NavDisplay` 用的 `NavigationBackHandler` 是
+`isForwardEnabled = false`，processor 的 `resolveEnabledHandler(TRANSITIONING_FORWARD)`
+只挑 `isForwardEnabled` 的 handler。**forward 事件走不到它的 handler。**
+
+**但那條路真的存在，只是走另一個 overload。** 1.1.4 有一個 public 的 hoisted
+`NavDisplay(sceneState, navigationEventState, ...)`，它**自己不裝** `NavigationBackHandler`；
+呼叫端若把同一個 state 交給 `NavigationForwardHandler`，forward 的回呼就會寫進那個欄位，
+而 `NavDisplay` 只認 `is InProgress` 就去 seek pop。**63 則講的那個危險是真的，
+它只是掛在一個這個 app 沒有走的 overload 上。**（這一條是第二個模型讀原始碼指出來的。）
+
+共用 processor 真正會咬到這個 app 的是另外兩件：
+
+1. **回程餵的是 back 事件，而 back 走得到。** `resolveEnabledHandler(TRANSITIONING_BACK)`
+   會挑中優先權最高的 back handler——在這個 app 裡就是 `NavDisplay` 的——
+   於是它拿我們編的進度去 seek 它自己的 pop 轉場。
+2. **`dispatchOnStarted` 開頭就是 `if (inProgressDirection != TRANSITIONING_UNKNOWN) return`。**
+   我們合成的那次「手勢」在飛的期間，讀者真的從左緣滑回來會被吞掉：平台那個 input 會把自己
+   標成 in-progress，但後續事件過不了 processor 的 input／direction 檢查。
+
+**還有一條跟 parent 無關的**：這顆 owner **不能**用 `LocalNavigationEventDispatcherOwner`
+提供到 `NavDisplay` 外面。`NavDisplay` 的 back handler 掛在那個 local 拿到的 dispatcher 上，
+而這顆 root 背後沒有掛任何 input，提供下去等於把 predictive back 從它手上拿走
+——除非另外把一個 input 掛上這顆 root，而那正是我們不想做的事。
+
+**裝置上跑過一次**：(A) 裝上去之後從左緣慢慢滑回來，文章跟著手指縮回那一列、feed 被揭開
+（10 倍速下 238 幀，f30 到 f220 逐幀看過）。**那是一次通過，不是「分離安全」的證明。**
+
+---
+
+### (A) 的進度從哪裡來：一條自己編的、跟真的差很遠的時間線
+
+**沒有測量，是合成。** `:navigation` 拿不到卡片的 bounds，compose-animation 1.11.4 也沒有
+per-key 的「這組 bounds 停了沒有」（第 62 則）。所以 (A) 與 (B) 餵的都是同一種東西：
+一條跟 `OneSpring` 同勁度（`StiffnessMediumLow`）、從狀態改變那一幀起跑的 `Float` 彈簧。
+
+**它跟真的矩形差多少，是量出來的，不是算出來的。** 狀態改變在 f069 前後，
+合成彈簧收斂（bar 被拿掉）在 (B) 是 f165、(A) 是 f169；而洋紅歸零要到 **f213**。
+**四十四到四十八個擷取樣本的落差。**
+
+**最可能的解釋是兩條彈簧的收斂判準不同**，而這一半是讀得到的：
+`Rect.VisibilityThreshold` 是一個像素（`VisibilityThresholds.kt`），
+`Float` 的是 `0.01f`；在一段約 1650 像素的旅程上，前者是 0.0006，比後者嚴格約十六倍。
+**但十六倍的門檻不等於十六倍的時間**——`FloatSpringSpec` 的 duration 跟位移、速度、
+勁度、阻尼一起算，不是門檻比的線性函數。**所以上面那四十幾幀是那一份錄影的觀察值，
+不是從這個比例推導出來的**，而且 f213 量的是「洋紅歸零」，不等於 bounds 那條彈簧
+自己判定結束。**同勁度不等於同時收斂**這句話成立，第 46 則那條規律的另一面；
+確切差多少沒有算出來。
+
+兩個實作用的都不是一個門檻，是兩個，而且都是對著幀配出來的：
+
+```kotlin
+private const val CoveredEnough = 0.99f     // 去程：合成值到這裡才准把 bar 拿掉
+private const val UncoveredEnough = 0.79f   // 回程：掉到這裡才准讓它回來
+```
+
+0.79 那個數字**有幾何意義**（下緣走完 79% 的旅程就到這一條的上緣），0.99 那個**沒有**——
+它只是「合成彈簧結束的那一刻」。**一個是算得出來的，一個是配出來的。**
+
+---
+
+### 幀：兩個實作給出同一批畫面
+
+三份比較用的錄影（另外四份是校準版、A 的第一版、兩份手勢），同一篇文章，
+`animator_duration_scale=10`，`ffmpeg -vf fps=30`。
+**下面每一個數字都是 30fps 重新取樣出來的擷取樣本，不是 Compose 畫的 frame。**
+
+| | committed | (B) | (A) |
+|---|---|---|---|
+| 去程 bar 消失 | **f071**（整條一次不見） | f165 | f169 |
+| 那時候矩形在哪 | 還沒到 | 只剩約 7% 露著 | 只剩約 7% 露著 |
+| **去程「沒有 bar 也沒有文章」** | **f071–f129，59 個擷取樣本** | **0** | **0** |
+| 回程 bar 蓋在已落定的文章上 | **f453–f460，8 個** | **0** | **0** |
+| 回程 bar 怎麼回來 | 一次全部出現 | f468→f473 逐步露出 | f469→f479 同上 |
+
+committed 那一列的 59 是**在同一份錄影裡量的**，不是跟校準版對出來的：bar 在 f071 消失之後，
+那一條的內容跟 f072 相比一直到 **f130** 才出現實質變化（平均通道差 22.5，之前都在 1 以下）——
+**中間五十九個擷取樣本裡，那一條就只是 feed 原本的兩列。**
+
+**兩個實作的幀，用同樣的量法分不出來。** (A) 比 (B) 慢三到四個擷取樣本；
+**推測**那是 `StateFlow` → `collectAsState` → 下一次組合這一圈，但沒有量過它。
+
+---
+
+### 但兩個實作都在手勢那一程上退步了
+
+`input swipe 5 1200 700 1200 2500` 從左緣滑回來，同樣 10 倍速，各錄一次：
+
+| | 手勢完成後 bar 出現 |
+|---|---|
+| committed | 畫面最後一次變化 f110 → bar f122，**12 個擷取樣本** |
+| (A)／(B) | 畫面最後一次變化 f104 → bar f136，**32 個擷取樣本** |
+
+**推定原因是這條路的前提被 predictive back 打掉了。** 合成時間線假設「動畫從堆疊改變那一幀開始」，
+而手勢回程的動畫在堆疊改變之前就已經被手指 seek 掉一大半；堆疊改變的那一刻文章幾乎已經到位，
+我們的彈簧卻才從 1.0 開始掉。**這是新的缺陷，committed 沒有。**
+
+諷刺的是這正是 (A) 唯一可能比 (B) 強的地方：手勢那一程的真進度**確實**在平台那顆 dispatcher 上
+（第 63 則量到過），(A) 已經在講 `NavigationEvent` 的話，接上去比 (B) 自然。但那要再多一顆
+dispatcher 的讀取與一條「這次是誰在開車」的判斷，而且第 63 則第二條理由在那裡仍然成立：
+手指放開之後 `transitionState` 立刻回 `Idle`，收尾動畫那一段照樣量不到。
+
+---
+
+### `Idle` 沒有值，所以 (A) 得自己再存一份
+
+(A) 的第一版直接寫 `Idle -> target`——反正不動的時候就是在兩端之一。**裝置上它比 committed 更糟**：
+按下返回的那一幀，`articleOnTop` 已經是 false、`LaunchedEffect` 還沒送出第一個事件，
+於是 `covered` 讀到 0，bar 立刻回來蓋在還沒縮的文章上——**f453–f466，十四個擷取樣本**，
+比 committed 的八個還長。
+
+修法是多存一個 `settled: Float`，在動畫收尾時寫入、`Idle` 時讀它。修完幀就對了（上表）。
+但這件事本身就是結論的一部分：**`NavigationEventTransitionState.Idle` 是一個沒有值的狀態**，
+所以任何拿它當單一真相來源的消費者，都得自己再持有一份「不動的時候停在哪」——
+**而那份東西正好就是 (B) 直接公開的那個數字。**
+
+---
+
+### diff
+
+| | 檔案 | 加 | 減 |
+|---|---|---|---|
+| (B) | `Mosaic.kt` | 32 | 1 |
+| (A) | `Mosaic.kt` | 20 | 1 |
+| (A) | `ArticleCoverage.kt`（新檔） | 125（其中 67 行是程式碼） | — |
+
+(A) 另外還把 `androidx.navigationevent` 從一個遞移相依變成直接 import 的東西——
+不必動 `libs.versions.toml`（`navigation3-ui` 用 `api` 帶進來，第 63 則已經確認），
+但**一個沒有在版本目錄裡宣告的座標從此出現在原始碼裡**。升級時會不會出事沒有驗過，
+這是一個判斷不是一個量到的後果。
+
+---
+
+**結論 —— 兩個都沒有進 commit，程式碼一行都沒有動。這是暫緩，不是定案。**
+
+不是因為它們沒有用：去程那五十九個擷取樣本的空窗真的消掉了，回程那八個也是。
+是因為**手勢那一程退步了**，而第 62 則立下的判準是「拿一個閃光換另一個不是進展」。
+
+**反面的說法也站得住，寫在這裡而不是壓掉它**：換掉的（59＋8）比換來的（32−12＝20）大得多，
+而且三個數字全是 10 倍速下、每個版本各一次、`fps=30` 重新取樣的樣本。
+**如果在 scale=1 下量，去程那個空窗看得見而手勢那 20 個樣本看不見，那麼拒絕就是過度保守。**
+下一個人要推翻這一則，該做的就是那個測量：scale=1、用時間戳而不是幀號對齊、每個版本多跑幾次。
+
+**而在「要不要用事件」這個問題上，答案是清楚的：(A) 沒有買到任何東西。**
+它多了 125 行、多了一顆要自己管生命週期的 dispatcher、多了一個必須明確傳 null 才成立的
+隔離、多了一份補 `Idle` 沒有值的影子狀態，換到的是**跟 (B) 分不出來的畫面、慢三四個樣本**。
+「導覽進度變成 app 裡好幾個東西都讀得到的事實」這個論點在這個 app 裡收不到錢：
+讀它的只有 bar 一個，而且那顆 dispatcher **不能**掛上 `LocalNavigationEventDispatcherOwner`，
+所以它根本不是「app 範圍內看得到」，是「我們遞給誰誰才看得到」——那就是一個
+`CompositionLocal` 裡的 `Float`。
+
+**第 63 則哪裡對、哪裡不對** —— 它兩條編號的理由都對，而且第二條這一輪又應驗了一次。
+它「餵假進度是循環論證」也對——上面那條合成彈簧就是它講的東西。
+**不對的是它給那個「不行」的第二個技術理由**（灌 forward 會讓 `NavDisplay` seek back），
+那條路掛在這個 app 沒有走的 overload 上；共用 processor 真正的危險是 back 那個方向，
+以及 `inProgressDirection` 那道閘。**它該說的不是「這條路不通」，
+是「這條路通到跟不用它一樣的地方」**——而這句話要走完才知道。
+
+**順便更正第 63 則的一個版本號**：它「取捨與限制」寫 `activity` 1.12.0，
+而寫下它的那個 commit 裡 `libs.versions.toml` 的 `activityCompose` 已經是 **1.13.0**，
+`:app:dependencies` 解析出來的也是 `androidx.activity:activity:1.13.0`。
+`ComponentActivity` 仍然 implements `NavigationEventDispatcherOwner`，結論不變，數字要改。
+
+---
+
+**取捨與限制**
+
+- **每個版本只在一台模擬器（API 34、x86_64、手勢導航）上各錄一次。** 上面每個幀號都來自那一次。
+- **整份紀錄裡的每一個幀數（59、8、12、32、44、48、16、51）都是 `fps=30` 重新取樣的樣本**，
+  不是 Compose 畫出來的 frame，也沒有一個在 scale=1 下重量過。
+- **點到的那一列是用縮圖樣板比對定位的**（七次比對誤差都是 0.00）。那只證明樣板在每一份
+  pre-tap 截圖裡都找到同一張縮圖，不證明其他每一件事都一樣：兩次慢速拖曳停在哪就不一樣，
+  七份錄影的點擊 y 座標分別是 551（committed）／630（校準版）／739（B）／
+  760、704（A 的兩版）／810、869（兩份手勢錄影）。卡片的位置會改變
+  「下緣走完幾成旅程才到這一條」，所以 0.79 那個數字**只對這一帶的列成立**。
+- **`CoveredEnough` 與 `UncoveredEnough` 沒有任何東西在校準它們。** 換一台裝置、換一個
+  螢幕高度、換一張坐在螢幕底部的卡片，兩個數字都要重配，而且沒有東西會在配錯的時候變紅。
+- **洋紅那個版本與兩個實作都沒有進 commit**，所以上面的證據不可重跑，只能重做。
+  重做的方法寫在上面：`visible = true` ＋ `Surface(color = Color(0xFFFF00FF))`，
+  `animator_duration_scale=10`，`screenrecord` 之後 `ffmpeg -vf fps=30`，逐幀數洋紅像素。
+- **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。
