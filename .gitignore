@@ -34,9 +34,11 @@ keystore.properties
 .claude/
 
 # 第二個模型的審查輸入／輸出（見 AGENTS.md），結論落在 AI_USAGE.md
-.codex-task.md
-.codex-run.log
-.codex-review.md
+# Codex transcripts. They belong outside the repository entirely -- one written
+# here is picked up by Codex's own rg sweeps and feeds itself -- but the pattern
+# is general so that a new name cannot arrive unignored, which is how a 400KB
+# transcript came to be sitting in a public working tree.
+.codex-*
 
 # 過夜自動作業留給人審的清單（本機工作筆記，不是專案文件）
 .open-questions.md
