@@ -2934,3 +2934,117 @@ transition 上，而那是同一個根的子節點。
   它只說明「這段空窗不是零」，不說明它有多長。
 - **洋紅那一版沒有進 commit**，所以上面的證據不可重跑，只能重做。
 - **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。
+
+## 63. 進度訊號一直都在 public API 裡，第 62 則說「沒有」是錯的——但它量的是手指，不是動畫
+
+> **這一則修正第 62 則的一句話，不改寫它。**
+> 62 則的結論（兩個缺陷都留著、程式碼回到第 58 則）**維持不變**，這一則沒有改任何程式碼。
+> 被修正的只有它用來支撐那個結論的其中一條理由。
+
+**第 62 則寫錯的那一句** —— 它說「**能真正關掉這件事的 signal 是 per-key 的『這一張卡片的
+bounds 停了沒有』，而 public API 沒有**」，又在「當時還考慮」裡寫「Navigation 3 有沒有現成的
+『轉場進行中』？**沒有**」。
+
+後面那句對前面那句不對。`SceneState` 那部分是對的——用 `javap` 讀 `navigation3-ui-android`
+1.1.4 的 AAR 確認過，它就只有 `entries`／`overlayScenes`／`currentScene`／`previousScenes`，
+一個講進度的欄位都沒有。**但「public API 沒有進度」這個更大的斷言是錯的**：
+
+`androidx.navigationevent` **早就在這個專案的 classpath 上**，而且是 **compile** classpath——
+`navigation3-ui:1.1.4` 透過 `api` 帶進 `navigationevent:1.1.2` 與
+`navigationevent-compose:1.1.2`（`./gradlew :navigation:dependencies` 確認）。
+它公開的東西正好就是 62 則說沒有的那種：
+
+```kotlin
+public val NavigationEventDispatcher.transitionState: StateFlow<NavigationEventTransitionState>
+public sealed class NavigationEventTransitionState { object Idle; class InProgress(latestEvent, direction) }
+public class NavigationEvent { val progress: Float /* 0..1 */; val swipeEdge; val touchX; val touchY }
+```
+
+**注意版本**：是 **1.1.2**，不是 1.1.1。而且**不需要動 `libs.versions.toml`**，
+它已經在 compile classpath 上，`import androidx.navigationevent.compose.*` 直接編得過
+（本次 spike 實際編過一次 `:app:assembleDebug`）。
+
+**所以真正的理由不是「沒有」，是量錯東西了。** 為了確定，在 `Mosaic.kt` 裡臨時掛一段探針，
+用 `LocalNavigationEventDispatcherOwner.current` 拿到 dispatcher，直接 `collect` 它的
+`transitionState`，逐筆印出來（模擬器、API 34、手勢導航、`enableOnBackInvokedCallback=true`）：
+
+| 動作 | 機制 | `transitionState` 實測 |
+|---|---|---|
+| 點卡片開文章 | `backStack.add(...)` | **全程 `Idle`，一筆事件都沒有** |
+| 文章裡那個返回箭頭 | `backStack.removeLastOrNull()` | **全程 `Idle`，一筆事件都沒有** |
+| 從左緣往右滑 | 平台 `OnBackAnimationCallback` | **`InProgress`**，progress `0.0 → 0.14 → 0.23 → 0.26 → 0.33 → 0.41 → 0.52`，`direction=-1` |
+
+第三列是這張表的重點：**探針看得見 `InProgress`**，所以前兩列的沉默是真的沉默，
+不是探針壞了。
+
+**兩個各自獨立、都足以否決它的理由**
+
+1. **它只有手勢，沒有程式化導航。** 讀 1.1.2 的原始碼可以解釋上表：`InProgress` 只在
+   `NavigationEventProcessor` 的 `onEventStarted`／`onEventProgressed` 裡被設，而那兩個只會
+   從 `NavigationEventInput` 的 `dispatchOn{Back,Forward}{Started,Progressed}` 進來。
+   整包 1.1.2 裡 `NavigationEventInput` 的子類只有四個：`OnBackInvokedInput` 三兄弟
+   （橋接平台的 `OnBackAnimationCallback`，**只有 back**）與 `DirectNavigationEventInput`
+   （**由 app 自己餵**）。`backStack.add(...)` 是一次 `SnapshotStateList` 的寫入，
+   跟 dispatcher 沒有任何關係。**去程——也就是 bar 出問題的那一程——它一個字都不會說。**
+   `TRANSITIONING_FORWARD` 這個常數存在，但**平台上沒有任何東西會產生它**。
+
+2. **更致命的一條：`Idle` 不代表動畫結束，只代表手指放開了。** 上面那次滑動的紀錄裡，
+   `Idle()` 印出來之後才輪到 `stack=1`——`onEventCompleted` 是立刻把 `_transitionState`
+   設回 `Idle` 的，而收尾那段動畫還要跑。**第 58／62 則那兩個缺陷全部住在那段動畫裡**
+   （去程是矩形長到 bar 那條之前的八幀，回程是文章落定後那五幀），
+   而在那整段時間裡這個 API 一律回答 `Idle`。
+   **它描述的是手指，不是動畫。** 所以就算只想修回程、只認手勢那一種回法，它也修不到。
+
+**順便問清楚的三件事**
+
+- **需不需要自己裝第二個 dispatcher？不用，而且讀它完全不必掛 handler。**
+  `androidx.activity:activity:1.12.0` 的 `ComponentActivity` **已經 implements
+  `NavigationEventDispatcherOwner`**（`javap` 確認），平台的 back input 掛在它上面。
+  `NavDisplay` 是**消費者**不是安裝者——`NavigationEventHandler` 那個 composable 裡是
+  `checkNotNull(LocalNavigationEventDispatcherOwner.current)`。上面那段探針就是直接讀
+  Activity 那一顆的 `StateFlow`，沒有註冊任何 handler，也就沒有「兩個東西搶同一個手勢」的問題。
+  （反過來說，`NavigationEventState.transitionState` 那條路**要**掛 handler：它只在
+  `doOnBack*`／`doOnForward*` 裡被寫，而 processor 只會叫**贏得優先權的那一個** handler，
+  所以一個 `isBackEnabled = false` 的「純觀察者」永遠收不到東西。要觀察就得從 dispatcher 讀。）
+
+- **Navigation 3 自己怎麼拿進度？同一顆，而且從外面拿得到。**
+  `NavDisplay` 內部就是 `rememberNavigationEventState(...)` ＋ `NavigationBackHandler(...)`，
+  然後 `is InProgress -> latestEvent.progress`、`is Idle -> 0f`，餵給
+  `SeekableTransitionState.seekTo()`；`Idle` 時走的是 `animateTo()`。
+  而且 1.1.4 有一個 **public 的 hoisted overload**：
+  `NavDisplay(SceneState<T>, NavigationEventState<SceneInfo<T>>, ...)`，
+  搭配 public 的 `rememberSceneState(...)`——app 可以自己持有那個 state 再交給 `NavDisplay`，
+  一個 handler、不重複註冊。**這是「同一個來源從外面讀得到」的正解**，記在這裡是為了
+  下一次真的需要它的時候不必再找。只是它讀到的仍然是上面那個只認手指的東西，所以救不了這件事。
+
+- **能不能自己餵 `DirectNavigationEventInput.forwardProgressed(...)` 去偽造去程進度？**
+  不行，而且會弄壞現在好的東西。第一它是循環論證：要餵進度就得先知道進度，
+  而「不知道進度」正是第 62 則的問題本身；餵一條假的斜坡就等於 62 則已經否決過的
+  「等固定幀數」。第二，`javap -c` 讀 1.1.4 的 `NavDisplayKt__NavDisplayKt`，
+  **它一次都沒有讀過 `InProgress.direction`**（`getDirection` 出現 0 次），
+  只認 `is InProgress` 就去 seek。所以往 shared dispatcher 灌 forward 事件，
+  會讓 `NavDisplay` 拿 forward 的進度去 seek **back** 的轉場。
+
+**要變成可用，得改的是什麼** —— 需要一個**描述動畫而不是描述手指**的訊號：
+要嘛 `transitionState` 在手指放開後繼續 `InProgress` 直到收尾動畫落定，
+要嘛 Navigation 3 把它內部那個 `SeekableTransitionState` 的 `fraction` 公開出來
+（那顆才是去程與回程都在跑的東西）。這兩件都在 androidx 那邊，不在這個專案裡。
+
+**結論** —— **不採用，程式碼一行都沒有動，第 62 則的結論原封不動。**
+這一則的價值只在於把「public API 沒有進度」換成一句更有用、也更準的話：
+**進度是有的，但它是手勢的進度；這個 app 的 bar 需要的是動畫的進度，那個仍然沒有。**
+
+**取捨與限制**
+
+- **只在一台模擬器（API 34、x86_64、手勢導航）上量過一次。** 上面那張表的每一列都來自那一次。
+- **探針沒有進 commit**（跟第 62 則那個洋紅版本一樣），所以證據不可重跑，只能重做。
+  重做的方法寫在上面：讀 `LocalNavigationEventDispatcherOwner.current` 的
+  `navigationEventDispatcher.transitionState` 並印出來。
+- **`enable_back_animation` 當時是 `0`**，而滑動仍然收得到 progress，所以那個開發者選項
+  不影響這裡的結論；但也因此**沒有**在它為 `1` 的情況下再量一次。
+- **沒有量 `progress` 到底會不會走到 `1.0`。** 上面最後一筆是 `0.52` 就直接 `Idle` 了，
+  因為手指在那裡放開。這不影響結論，但別把那張表當成 progress 的完整值域。
+- **版本是當下解析到的那組**：`navigationevent` 1.1.2、`navigation3` 1.1.4、`activity` 1.12.0。
+  androidx 這幾包還在動（GitHub 上的 `androidx-main` 已經比 1.1.4 前面，
+  `rememberNavigationEventState` 在那裡已經搬進 `androidx.navigation3.scene`），
+  所以這一則的每一句都繫在這三個版本上。
