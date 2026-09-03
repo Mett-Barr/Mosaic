@@ -2823,9 +2823,14 @@ Material Symbols：裡面**沒有** `Foggy`、`Rainy`、`Snowing` 這些天氣�
   它是唯一「水正在往下掉」的輪廓。另外 `OpenMeteoMapper` 的 WMO 80-82 是 rain showers，
   而那三個碼落在的正是 `Sky.RAIN` 這條分支，所以連字面也是來源自己的字。
 - **`Waves` 也可能被讀成「海」。** 同樣靠上下文，同樣沒有更好的候選。
-- **這一則沒有測試，而且不可能有。** 「兩個圖示看起來像不像」不是斷言問得出來的，
-  `EverySkyPreview` 的 KDoc 早就寫著「唯一的辦法是把它們並排看」。
-  一個「八個 `ImageVector` 互不相同」的測試改動前就是綠的——它抓不到這種撞法。
+- **這一則沒有自動化的視覺檢查，但不是不可能有。** 一個「八個 `ImageVector` 互不相同」
+  的測試改動前就是綠的——它抓不到這種撞法；而 **screenshot／golden test 抓得到**，
+  它可以把 20dp／24dp 下真正畫出來的像素釘住，讓「兩片點陣」再被引入時變紅。
+  本專案沒有那一層（README 的已知限制裡本來就寫著），所以這裡靠的是人看。
+  **「不可能測」是講過頭了，正確的說法是「這個 repo 目前沒有在測」。**
+- **`OpenMeteoMapper` 那句話現在有測試釘著。** 註解拿 WMO 80-82 是 rain showers 當
+  `Shower` 的理由之一，而原本的測試只直接斷言 81；新增的
+  `all three shower codes are rain` 三個都斷言，並且把 82 從分支拿掉驗證過它會紅。
 - **只在一台 420dpi 的模擬器上、只在淺色主題下看過。**
   沒有在深色、沒有在低密度、沒有在真機上驗。
 
@@ -2865,15 +2870,32 @@ layout pass，而 layout pass 不會因為開發者選項把動畫拉長十倍�
 文章已經完全落定、全螢幕、不動了，而**那條 bar 不透明地蓋在它上面五幀**，
 到 f232 才消失。
 
-**根因：`isTransitionActive` 不是 overlay 的界線。** 文件說它是「這個 scope 裡有沒有
-任何 shared element 的轉場在跑」，而畫面說卡片的 `sharedBounds` 在旗標落下之前就已經
-離開 overlay——洋紅在 f227 就看得見，代表那時候 bar 已經畫在文章上面了，
-而 overlay 是畫在 `Scaffold` 之上的，它若還在畫這一份，不可能看得見 bar。
-**多出來的那五幀就是這個差。**
+**量到的事實：那五個擷取樣本裡，bar 畫在文章上面。** overlay 是畫在 `Scaffold` 之上的
+（第 42 則），所以只要看得見洋紅，那一份文章就不是由 overlay 畫的。
+**這證明的是「有一段遮不到的空窗」，不證明卡片是因為自己那條彈簧跑完才離開 overlay。**
 
-**是哪一個動畫把旗標撐到 f231 的，沒有查出來。** 標題與來源那兩條 `sharedBounds`
-的淡入是嫌疑最大的；圓角那條 `animateDp` 掛在 `AnimatedVisibility` 的 transition 上而
-不是這個 scope 上，理當不算。**這一段是推測，只有「差五幀」是量到的。**
+**推定原因，讀 compose-animation 1.11.4 的原始碼得到的** ——
+`SharedTransitionScope.kt` 的 `updateTransitionActiveness()` 是
+`isActive ||= element.foundMatch && element.isAnimating()`，對**所有 shared element** 取
+OR；而 `BoundsAnimation.kt` 的 `isRunning` 是
+
+```kotlin
+var parent: Transition<*> = transition
+while (parent.parentTransition != null) parent = parent.parentTransition!!
+return parent.currentState != parent.targetState
+```
+
+——它一路走到**根** `Transition`，回報的是「這棵樹整個落定了沒有」。
+所以旗標撐著的原因不必是任何一條 shared bounds：**掛在同一棵樹上的任何一個動畫都算**，
+包含 `ArticleMotion` 裡那條圓角的 `animateDp`——它掛在 `AnimatedVisibility` 的
+transition 上，而那是同一個根的子節點。
+**本檔先前寫「它理當不算」，那是錯的，而這是第二個模型讀原始碼指出來的。**
+
+**能真正關掉這件事的 signal 是 per-key 的「這一張卡片的 bounds 停了沒有」，
+而 public API 沒有。** `SharedContentState.isMatchFound` 只說配對成立，不說動畫結束
+（第 43 則已經踩過它的時序）。剩下的一條路是**讓 app 自己持有那個 `Transition`**，
+用同一個 `isIdle` 同時決定卡片與 bar——那要把 `NavDisplay` 的動畫接管過來，
+代價遠大於這兩個缺陷。
 
 **這正是不能接受的那種交換** —— 原本的缺陷是「chrome 太早離開」，
 新的缺陷是「chrome 離開之後又回來一下」，而後者正是第 58 則在回程那一端
@@ -2907,7 +2929,8 @@ layout pass，而 layout pass 不會因為開發者選項把動畫拉長十倍�
 **取捨與限制**
 
 - **只在一台模擬器上、只量了一次去程與一次回程。** 上面每個幀號都來自那一份錄影。
-- **「五幀」是 `animator_duration_scale=10` 下的幀數**，沒有在 scale=1 下重量；
-  它是不是同樣是五幀不知道，只知道它不是零。
+- **「五幀」是 `animator_duration_scale=10` 下、`ffmpeg -vf fps=30` 抽出來的
+  五個擷取樣本**，不等於 Compose 畫了五個 frame，也沒有在 scale=1 下重量。
+  它只說明「這段空窗不是零」，不說明它有多長。
 - **洋紅那一版沒有進 commit**，所以上面的證據不可重跑，只能重做。
 - **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。
