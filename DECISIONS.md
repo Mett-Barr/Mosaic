@@ -2826,3 +2826,82 @@ Material Symbols：裡面**沒有** `Foggy`、`Rainy`、`Snowing` 這些天氣�
   一個「八個 `ImageVector` 互不相同」的測試改動前就是綠的——它抓不到這種撞法。
 - **只在一台 420dpi 的模擬器上、只在淺色主題下看過。**
   沒有在深色、沒有在低密度、沒有在真機上驗。
+
+---
+
+## 62. 讓 bar 留到被蓋住的那個做法試出來了，代價是文章落定後它自己彈回來
+
+> **這一則接在第 58 則「取捨與限制」那兩條後面，不改寫它。**
+> 58 則留下兩個已知缺陷（去程 bar 彈一下、回程閃一下）並寫著這是這次改動的價錢。
+> 這一則是照它指的方向真的做了一次、量了、然後**放棄**的紀錄。程式碼一行都沒有留下。
+
+**想法** —— 58 則否決的是 `visible = showsTheBar() || isTransitionActive`，
+理由是**上升緣**：堆疊在點下去那一幀就說「沒有 bar」，而 `isTransitionActive` 要等
+shared element 在 layout pass 配對成功才變 true，中間那兩三幀 bar 會先掉再回來。
+
+那個理由只否決了「用 OR」，沒有否決「用 `isTransitionActive` 當界線」。
+所以這次補上一段**橋**：從堆疊改變的那一幀起先按住畫面上原本的值，
+等 `isTransitionActive` 真的亮過再放手。橋用**幀**而不是毫秒計數，因為要等的是一次
+layout pass，而 layout pass 不會因為開發者選項把動畫拉長十倍就跟著變慢。
+
+規則寫成一句話是：**堆疊說「要不要」，overlay 說「什麼時候可以照做」。**
+`SharedTransitionLayout` 在 `Scaffold` 外面（第 42 則），所以會飛的矩形畫在 bar 之上——
+理論上「文章還在 overlay 裡」正好就是「bar 現在是被蓋住的」。
+
+**做了，而且量得出它有效的那一半** —— 為了分辨「bar 被拿掉」與「bar 被蓋住」
+（兩者在錄影裡長得一模一樣，因為蓋住它的正是同一張照片），
+把 `DestinationBar` 的 `Surface` 暫時塗成洋紅，再錄一次
+（`animator_duration_scale=10`、`screenrecord`、`ffmpeg -vf fps=30`），
+逐幀量洋紅像素佔那一條的比例：
+
+- **去程開頭修好了。** 原本：f52–f56 有 bar，**f58 bar 整條消失**，露出的是 feed 自己的
+  卡片照片——文章的矩形要到 f66 才長到那裡，中間八幀是「bar 走了、文章還沒到」。
+  加了橋之後：f55–f63 洋紅 0.77（bar 在原地），f64 起降到 0.08，
+  **而降下去的原因是矩形蓋上來，不是 bar 被拿掉**。
+
+**但是它在另一端弄壞了一件本來沒壞的事** —— 洋紅在 **f227–f231 回到 0.77**：
+文章已經完全落定、全螢幕、不動了，而**那條 bar 不透明地蓋在它上面五幀**，
+到 f232 才消失。
+
+**根因：`isTransitionActive` 不是 overlay 的界線，它是那個 scope 裡「還有任何動畫在跑」。**
+卡片的 `sharedBounds` 先結束、先離開 overlay（洋紅在 f227 就看得見，代表那時候
+bar 已經畫在文章上面了——overlay 若還在畫，它畫在 `Scaffold` 之上，不可能看得見 bar），
+而標題與來源那兩條 `sharedBounds` 的淡入、以及圓角那條 `animateDp` 還沒停，
+所以旗標還是 true。**多出來的那五幀就是這個差。**
+
+**這正是不能接受的那種交換** —— 原本的缺陷是「chrome 太早離開」，
+新的缺陷是「chrome 離開之後又回來一下」，而後者正是第 58 則在回程那一端
+已經記下來的、最刺眼的那一種。把去程的彈跳換成去程結尾的閃光不是進展。
+
+**當時還考慮**
+
+- **只修回程那個閃光**（bar 的「出現」也押到轉場結束）。同一個五幀的差會反過來咬：
+  文章縮回卡片、離開 overlay 之後，`isTransitionActive` 還要五幀才落下，
+  那五幀是「feed 已經全畫出來但底下沒有 bar」。換一種閃法而已。
+- **改押在卡片自己的 `SharedContentState.isMatchFound` 上。** 那個狀態屬於
+  entry 裡面的元素；`:navigation` 要拿到它得用同一把 key 再 `rememberSharedContentState`
+  一次，而同一把 key 出現兩份會壞掉配對本身。
+- **等固定幀數之後就放手**（不等旗標落下）。那是把彈跳往後挪幾幀，不是消掉它，
+  而且那個幀數沒有任何東西可以校準。
+- **Navigation 3 有沒有現成的「轉場進行中」？** 沒有。翻過 `navigation3-ui` 1.1.4 的
+  public API：`SceneState` 只給 `currentScene`／`previousScenes`／`entries`，
+  沒有任何一個講進度或落定。
+- **`ExitTransition.KeepUntilTransitionsFinished`。** 名字完全對，但它是
+  `AnimatedContentTransitionScope` 的擴充，而且 compose-animation 1.11.4 的原始碼在
+  它的定義上直接寫著理由：*"Keep this type of exit transition internal and only expose it
+  in AnimatedContent, as holding only makes sense when there's enter and exit at the same
+  time... such as AnimatedVisibility, holding would not be meaningful."* 這裡是
+  `AnimatedVisibility`，拿不到。
+
+**結論** —— **兩個缺陷都留著，程式碼回到第 58 則的狀態。**
+它們小、已經被誠實地寫下來，而已知的每一種修法都是拿一個閃光換另一個。
+這一則存在的意義是下一個人不必再走一次：**`isTransitionActive` 這條路量過了，
+它在起點是對的，在終點差五幀。**
+
+**取捨與限制**
+
+- **只在一台模擬器上、只量了一次去程與一次回程。** 上面每個幀號都來自那一份錄影。
+- **「五幀」是 `animator_duration_scale=10` 下的幀數**，沒有在 scale=1 下重量；
+  它是不是同樣是五幀不知道，只知道它不是零。
+- **洋紅那一版沒有進 commit**，所以上面的證據不可重跑，只能重做。
+- **一樣沒有截圖測試。** 這裡每一句都是人看幀，不是任何會自己跑的檢查。
