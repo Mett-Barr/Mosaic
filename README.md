@@ -151,10 +151,9 @@ class stateful,stateless,leaf,parts ui
 `SavedArticleDao` 有兩個消費者，是「存過的文章優先」發生在**資料層**而不是畫面的證據
 （`DECISIONS.md` 30）。
 
-> **互動版**：[點這裡直接開](https://htmlpreview.github.io/?https://github.com/Mett-Barr/Mosaic/blob/main/docs/architecture.html)——
-> 點任一模組會 highlight 它的相依邊，並列出它吃什麼、誰吃它，以及三條跨層資料流。
-> 原始檔在 [`docs/architecture.html`](docs/architecture.html)；GitHub 本身不渲染 repo 裡的 HTML，
-> 上面那個連結是 htmlpreview 代為渲染的。
+> **互動版**：<https://mett-barr.github.io/Mosaic/>——點任一模組會 highlight 它的相依邊，
+> 並列出它吃什麼、誰吃它，以及三條跨層資料流。原始檔是 [`docs/architecture.html`](docs/architecture.html)，
+> 由 GitHub Pages 從 `docs/` 直接提供。
 
 ## 任務拆解與順序
 
