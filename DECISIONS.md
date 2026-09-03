@@ -2769,8 +2769,9 @@ a 與 b；但**它描述的那個現象正好就是 b 的代價**，而幀證實
 
 ## 61. 起霧與毛毛雨本來畫的是同一種東西——兩片點陣
 
-**症狀** —— 裝置上 24dp 看，`Sky.FOG` 的 `BlurOn` 是一片 5×5 的點陣，
-`Sky.DRIZZLE` 的 `Grain` 是七顆稍大的點。**兩個都不像天氣，兩個都像
+**症狀** —— 裝置上 24dp 看，`Sky.FOG` 的 `BlurOn` 是二十四顆由小到大排成一片的點，
+`Sky.DRIZZLE` 的 `Grain` 是八顆同樣大的點（兩個數字都是從渲染出來的圖上數的）。
+**兩個都不像天氣，兩個都像
 「圖片還沒載進來的那塊灰底」**——開發者原話是 it looks like a placeholder image。
 而且它們**彼此**也撞：一片細點陣旁邊一片粗點陣，是同一個圖案的兩個密度。
 
@@ -2779,8 +2780,9 @@ a 與 b；但**它描述的那個現象正好就是 b 的代價**，而幀證實
 Material Symbols：裡面**沒有** `Foggy`、`Rainy`、`Snowing` 這些天氣字面。
 只要照名字挑，就會挑到「語意最接近但畫面是抽象圖案」的那一顆。
 
-**選了** —— 把 aar 從 `~/.gradle/caches/modules-2` 解開、列出 `outlined` 底下全部
-2223 個名字，把所有可能的候選丟進一個拋棄式畫面裝到裝置上，用截圖比：
+**選了** —— 把 aar 從 `~/.gradle/caches/modules-2` 解開、列出 `Icons.Outlined` 底下
+全部 2084 個名字（另有 139 個在 `automirrored` 子套件裡），把所有可能的候選丟進一個
+拋棄式畫面裝到裝置上，用截圖比：
 
 | Sky | 之前 | 現在 |
 |---|---|---|
@@ -2863,11 +2865,15 @@ layout pass，而 layout pass 不會因為開發者選項把動畫拉長十倍�
 文章已經完全落定、全螢幕、不動了，而**那條 bar 不透明地蓋在它上面五幀**，
 到 f232 才消失。
 
-**根因：`isTransitionActive` 不是 overlay 的界線，它是那個 scope 裡「還有任何動畫在跑」。**
-卡片的 `sharedBounds` 先結束、先離開 overlay（洋紅在 f227 就看得見，代表那時候
-bar 已經畫在文章上面了——overlay 若還在畫，它畫在 `Scaffold` 之上，不可能看得見 bar），
-而標題與來源那兩條 `sharedBounds` 的淡入、以及圓角那條 `animateDp` 還沒停，
-所以旗標還是 true。**多出來的那五幀就是這個差。**
+**根因：`isTransitionActive` 不是 overlay 的界線。** 文件說它是「這個 scope 裡有沒有
+任何 shared element 的轉場在跑」，而畫面說卡片的 `sharedBounds` 在旗標落下之前就已經
+離開 overlay——洋紅在 f227 就看得見，代表那時候 bar 已經畫在文章上面了，
+而 overlay 是畫在 `Scaffold` 之上的，它若還在畫這一份，不可能看得見 bar。
+**多出來的那五幀就是這個差。**
+
+**是哪一個動畫把旗標撐到 f231 的，沒有查出來。** 標題與來源那兩條 `sharedBounds`
+的淡入是嫌疑最大的；圓角那條 `animateDp` 掛在 `AnimatedVisibility` 的 transition 上而
+不是這個 scope 上，理當不算。**這一段是推測，只有「差五幀」是量到的。**
 
 **這正是不能接受的那種交換** —— 原本的缺陷是「chrome 太早離開」，
 新的缺陷是「chrome 離開之後又回來一下」，而後者正是第 58 則在回程那一端

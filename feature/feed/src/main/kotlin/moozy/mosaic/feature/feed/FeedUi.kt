@@ -190,12 +190,13 @@ internal fun Sky.icon(): ImageVector = when (this) {
     Sky.CLEAR -> Icons.Outlined.WbSunny
     Sky.CLOUDY -> Icons.Outlined.Cloud
     // There is still no fog in the icon set, and the two that were reached for
-    // first are the two this set draws as dot fields: `BlurOn` is a five-by-five
-    // grid and `Grain` is seven specks, so at 24dp fog and drizzle were the pair
-    // that collided -- with each other, and both with the grey rectangle an app
-    // shows where a picture has not loaded yet. Layered horizontal strokes are
-    // what a weather map draws for air you cannot see through, and nothing else
-    // among the eight is made of horizontal strokes.
+    // first are the two this set draws as dot fields: `BlurOn` is twenty-four
+    // dots graded from small to large and `Grain` is eight of one size, both
+    // counted off a render. So at 24dp fog and drizzle were the pair that
+    // collided -- with each other, and both with the grey rectangle an app shows
+    // where a picture has not loaded yet. Layered horizontal strokes are what a
+    // weather map draws for air you cannot see through, and nothing else among
+    // the eight is made of horizontal strokes.
     Sky.FOG -> Icons.Outlined.Waves
     // One drop against a head of them falling. Drizzle and rain are kept apart in
     // the domain because one changes whether you take a coat, and *less water
